@@ -1,0 +1,390 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+# $Revision: 1.3 $
+import sys;
+import os;
+import re;
+import unicodedata;
+import time;
+import locale
+import tempfile
+import getopt
+import vobject
+import subprocess
+
+myname = os.path.basename(sys.argv[0])
+opts, args = getopt.getopt(sys.argv[1:], "grupP", ["groff", "ps", "utf8"])
+
+of_print = "print"
+of_utf8 = "utf8"
+of_postscript = "postscript"
+of_groff = "groff"
+
+output_format = "print"
+
+print_list = False
+big_print = False
+groff_arg1 = "-P"
+groff_arg2 = "-pA4"
+output_format = of_postscript
+for o, a in opts:
+	if o == "--ps":
+		output_format = of_postscript
+		print_list = True
+	elif o == "-p":
+		print_list = True
+		big_print = False
+	elif o == "-P":
+		print_list = True
+		big_print = True
+	elif o in ("--utf8", '-u'):
+		output_format = of_utf8
+		print_list = True
+		groff_arg1 = "-T"
+		groff_arg2 = "utf8"
+	elif o in ("--groff", "-g"):
+		output_format = of_groff
+
+now = time.time()
+
+#locale.setlocale(locale.LC_COLLATE, 'fr_FR.iso885915@euro')
+locale.setlocale(locale.LC_ALL, '')
+locale.setlocale(locale.LC_COLLATE, 'fr_FR.UTF-8')
+
+def format_number(number):
+	if number.find('p') >= 0:
+		p = re.compile('^.*p')
+		number = p.sub('', number)
+		if number.startswith('00'):
+			number = '+' + number[2:]
+	else:
+		if number.startswith('+33'):
+			number = '0' + number[3:]
+		if number.startswith('0'):
+			p = re.compile(r'(\d\d)')
+			number = p.sub(r'\1.', number)
+			number = number[0:-1]
+	return number
+
+def format_contact(contact, troff, min_pager):
+	if troff:
+		or_mark = r" \(or "
+	else:
+		or_mark = " | "
+	if troff:
+		nbsp = r'\ '
+	else:
+		nbsp = ' '
+	try:
+		nv = contact.n.value
+	except AttributeError:
+		return ''
+	name = ''
+	for k in (nv.prefix, nv.given, nv.family, nv.suffix, nv.additional):
+		if k != '' and name != '':
+			name = name + " "
+		name = name + k
+	if troff:
+		out = r'\fB' + name + r'\fP'
+	else:
+		out = name + ','
+
+	pager = 0
+	if 'x-gender'  in contact.contents:
+		for g in  contact.contents['x-gender']:
+			if g.value == 'female' or g.value == "male":
+				pager = 2
+			else:
+				pager = 1
+		
+	if 'tel' in contact.contents:
+		for number in contact.contents['tel']:
+			tag = ''
+			for type in number.params['TYPE']:
+				if type == 'CELL':
+					tag += 'm'
+				elif type == 'HOME':
+					tag += 'h'
+				elif type == 'FAX':
+					tag += 'f'
+				elif type == 'WORK':
+					tag += 'w'
+				elif type == 'PAGER':
+					break
+			else:
+				out += ' '
+				if len(tag) > 0:
+					out += tag + nbsp
+				out += format_number(number.value)
+	if pager < min_pager:
+		return ''
+
+	if 'adr' in contact.contents:
+		for address in contact.contents['adr']:
+			tag = ''
+			try:
+				for type in address.params['TYPE']:
+					if type == 'HOME':
+						tag += 'h'
+					elif type == 'WORK':
+						tag += 'w'
+			except KeyError:
+				pass
+			v = address.value
+			for v in (v.box, v.extended, v.street, v.code, v.city, v.region, v.country):
+				if len(v) > 0:
+					out += ' '
+					if len(tag):
+						out += tag + nbsp
+						tag = ''
+					for vv in v:
+						out += vv
+	if 'note' in contact.contents:
+		done1 = False
+		for note in contact.contents['note']:
+			if len(note.value):
+				if done1:
+					out += or_mark
+				else:
+					out += ' ('
+					done1 = True
+				out += note.value
+		if done1:
+			out += ')'
+
+	if 'email' in contact.contents:
+		for email in contact.contents['email']:
+			out += ' ' + email.value
+			
+	return out
+
+def strip_accents(uc):
+	if uc == '':
+		return ''
+		
+	c = unicodedata.normalize('NFD', uc)
+	d = ""
+	for i in c:
+		if unicodedata.combining(i) == 0:
+			d += i
+	return d
+
+def eclose(evolution, errors):
+	if evolution.wait() != 0:
+		errors.seek(0)
+		sys.stderr.writelines(errors)
+		sys.exit(myname + ": evolution failed")
+
+errors = tempfile.TemporaryFile()
+#evolution = subprocess.Popen("evolution-addressbook-export", bufsize = -1, stdout = subprocess.PIPE, stderr = errors, close_fds = True)
+vcal = file("/tmp/addressbook.vcal")
+
+def matcher(unicode, expressions, what):
+#	print "matching", what, "=", `unicode`
+	for e in expressions:
+		if e.search(strip_accents(unicode)):
+			return True
+	return False
+
+
+def match(contact, expressions):
+#	print contact
+	for k in ("org", ):
+		if k in contact.contents:
+			for l in contact.contents[k]:
+				for m in l.value:
+					if (matcher(m, expressions, k)):
+						return True
+				
+	for k in ("n",):
+		if k in contact.contents:
+			for l in contact.contents[k]:
+#				print "n 1= ", dir(l)
+#				print "n a= ", l.prettyPrint()
+#				print "n 2= ", `l.value`
+#				print "n 3= ", dir(l.value)
+#				print "n 3 given = ", `l.value.given`
+#				print "n5=", strip_accents(l.value.given)
+#				print "n6=", strip_accents(l.value.family)
+				if (matcher(l.value.suffix, expressions, k + " suffix")):
+					return True
+				if (matcher(l.value.additional, expressions, k + " additional")):
+					return True
+				if (matcher(l.value.prefix, expressions, k + " prefix")):
+					return True
+				if (matcher(l.value.given, expressions, k + " given")):
+					return True
+				if (matcher(l.value.family, expressions, k + " family")):
+					return True
+					
+	for k in ("fn",):
+		if k in contact.contents:
+			for l in contact.contents[k]:
+				if (matcher(l.value, expressions, k)):
+					return True
+			
+	return False
+
+
+if not print_list:
+	expressions = []
+	for a in args:
+		expressions.append(re.compile(strip_accents(a.decode('utf-8')), re.IGNORECASE))
+	for contact in vobject.readComponents(vcal):
+		if (match(contact, expressions)):
+#			print dir(contact), contact.n.value.__doc__, `contact.n.value.given`, dir(contact.n.value)
+			print format_contact(contact, False, 0).encode('utf-8')
+#		express: for e in expressions:
+#			for k in ("fn", "n", "org"):
+#				if k in contact.contents:
+#			for k in contact.contents:
+#					print k, "is", contact.contents[k]
+#					if e.search(strip_accents(contact.contents[k])):
+#						print dir(contact)
+#				for z in contact.getChildren():
+#					print z
+#					print format_contact(contact, False, 0).encode('utf-8')
+#					break express
+#	eclose(evolution, errors)
+	sys.exit(0)
+
+ebase = os.path.join("etc", "abook.txt")
+ename = os.path.join(os.environ['HOME'], ebase)
+emails = open(ename)
+#if now > os.fstat(emails.fileno()).st_mtime + 60 * 60 * 15:
+#	sys.exit(sys.argv[0] + ": email aliases must be exported to ~/" + ebase)
+
+if output_format == of_groff:
+	output = sys.stdout
+else:
+	output = tempfile.TemporaryFile()
+mess = """.\\"
+.af minutes 00
+.kern
+.fam HN
+.nh
+.na
+.nr topmargin 0.5c
+.po 0.7c
+.ll 19.8c
+.pl 29.7c
+.sp \\n[topmargin]u
+"""
+output.write(mess)
+
+if big_print:
+	mess = """.\\"
+.ps 10
+.vs \\n[.s]+0.9
+.de NP
+'bp
+'sp \\n[topmargin]u
+..
+.wh -0.8c NP
+"""
+else:
+	mess = """.\\"
+.ps 7.2
+.vs \\n[.s]+0.4
+.ll 15c
+.de NP
+' bp
+' sp \\n[topmargin]u
+' po +4.4c
+..
+.wh 7.2c NP
+"""
+output.write(mess)
+output.write(r'\n[hours]:\n[minutes] \n[dy]/\n[mo]/\n[year]' + '\n')
+if big_print:
+	output.write('.sp 0.3\n')
+
+contacts = []
+for contact in vobject.readComponents(vcal):
+	line = format_contact(contact, True, big_print and 1 or 2)
+	if len(line):
+		contacts.append(line)
+
+#eclose(evolution, errors)
+
+contacts.sort(locale.strcoll)
+
+for line in contacts:
+	euro = u'\u20ac'
+	line = line.replace(euro, r'\[eu]')
+	output.write(line.encode('iso8859-1'))
+	output.write('\n')
+	if big_print:
+		output.write('.br\n')
+
+output.write('\n')
+aliases = []
+for line in emails:
+	email = line.split('\t')
+	pager = email[10]
+	if pager == '1' or big_print and pager == '2':
+		aliases.append(email[4])
+
+def caseIndependantCmp(a, b):
+	return cmp(a.lower(), b.lower())
+aliases.sort(caseIndependantCmp)
+for a in aliases:
+	output.write(a + '\n')
+
+if output_format == of_groff:
+	sys.exit(0)
+
+output.flush()
+output.seek(0)
+
+postscript = tempfile.TemporaryFile()
+child = os.fork()
+if child == 0:
+	os.dup2(output.fileno(), 0)
+	if output_format == of_print:
+		os.dup2(postscript.fileno(), 1)
+	os.execlp("groff", "groff", groff_arg1, groff_arg2)
+	sys.exit("execl failed")
+pid, status = os.waitpid(child, 0)
+if status:
+	sys.exit('groff failed: ' + `status`)
+
+if output_format != of_print:
+	sys.exit()
+
+if big_print:
+	printer = "lp"
+else:
+	printer = "lph"
+
+options = popen2.Popen3("lpoptions")
+lpoptions = options.fromchild.readline()
+options.fromchild.close()
+turn_over = options.wait() != 0 or not "Duplex=Duplex" in lpoptions
+
+postscript.seek(0)
+child = os.fork()
+if child == 0:
+	os.dup2(postscript.fileno(), 0)
+	if turn_over:
+		os.execlp(printer, printer, "-P1")
+	else:
+		os.execlp(printer, printer)
+	sys.exit("execl failed")
+pid, status = os.waitpid(child, 0)
+if status:
+	sys.exit(printer + ' failed')
+
+if turn_over:
+	print "turn the paper over and hit return ", 
+	sys.stdin.readline()
+	
+	postscript.seek(0)
+	child = os.fork()
+	if child == 0:
+		os.dup2(postscript.fileno(), 0)
+		os.execlp(printer, printer, "-P2")
+		sys.exit("execl failed")
+	pid, status = os.waitpid(child, 0)
+	if status:
+		sys.exit(printer + ' failed')
