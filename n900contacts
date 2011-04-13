@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-#    Copyright (c) 2011 Stuart Pook
+#    n900contacts Copyright (c) 2011 Stuart Pook
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
 #    the Free Software Foundation, either version 3 of the License, or
@@ -27,6 +27,7 @@ import subprocess
 
 myname = os.path.basename(sys.argv[0])
 opts, args = getopt.getopt(sys.argv[1:], "grupP", ["groff", "ps", "utf8"])
+get_calendar = ("ssh", "-xn", "n900", ". /etc/profile && t=`mktemp /tmp/cXXXXXX` && osso-addressbook-backup -e $t && cat $t && rm $t")
 
 of_print = "print"
 of_utf8 = "utf8"
@@ -186,10 +187,10 @@ def eclose(evolution, errors):
 	if evolution.wait() != 0:
 		errors.seek(0)
 		sys.stderr.writelines(errors)
-		sys.exit(myname + ": evolution failed")
-
+		sys.exit(myname + ": unable to read calendar")
+		
 errors = tempfile.TemporaryFile()
-evolution = subprocess.Popen(("ssh", "-xn", "n900", ". /etc/profile && t=`mktemp /tmp/cXXXXXX` && osso-addressbook-backup -e $t && cat $t && rm $t"), bufsize = -1, stdout = subprocess.PIPE, stderr = errors, close_fds = True)
+evolution = subprocess.Popen(get_calendar, bufsize = -1, stdout = subprocess.PIPE, stderr = errors, close_fds = True)
 vcal = evolution.stdout
 
 def matcher(unicode, expressions, what):
@@ -261,12 +262,6 @@ if not print_list:
 #	eclose(evolution, errors)
 	sys.exit(0)
 
-ebase = os.path.join("etc", "abook.txt")
-ename = os.path.join(os.environ['HOME'], ebase)
-emails = open(ename)
-#if now > os.fstat(emails.fileno()).st_mtime + 60 * 60 * 15:
-#	sys.exit(sys.argv[0] + ": email aliases must be exported to ~/" + ebase)
-
 if output_format == of_groff:
 	output = sys.stdout
 else:
@@ -331,18 +326,6 @@ for line in contacts:
 		output.write('.br\n')
 
 output.write('\n')
-aliases = []
-for line in emails:
-	email = line.split('\t')
-	pager = email[10]
-	if pager == '1' or big_print and pager == '2':
-		aliases.append(email[4])
-
-def caseIndependantCmp(a, b):
-	return cmp(a.lower(), b.lower())
-aliases.sort(caseIndependantCmp)
-for a in aliases:
-	output.write(a + '\n')
 
 if output_format == of_groff:
 	sys.exit(0)
