@@ -27,7 +27,7 @@ import subprocess
 
 myname = os.path.basename(sys.argv[0])
 opts, args = getopt.getopt(sys.argv[1:], "grupP", ["groff", "ps", "utf8", "dots"])
-get_calendar = ("ssh", "-xn", "n900", ". /etc/profile && t=`mktemp /tmp/cXXXXXX` && osso-addressbook-backup -e $t && cat $t && rm $t")
+get_calendar = ("ssh", "-xn", "n900", "t=`mktemp /tmp/cXXXXXX` && run-standalone.sh osso-addressbook-backup -e $t && cat $t && rm $t")
 
 of_print = "print"
 of_utf8 = "utf8"
