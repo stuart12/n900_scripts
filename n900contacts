@@ -189,7 +189,7 @@ def eclose(evolution, errors):
 		sys.exit(myname + ": evolution failed")
 
 errors = tempfile.TemporaryFile()
-evolution = subprocess.Popen(("ssh", "-xn", "n900", "t=`mktemp /tmp/cXXXXXX` && osso-addressbook-backup -e $t && cat $t && rm $t"), bufsize = -1, stdout = subprocess.PIPE, stderr = errors, close_fds = True)
+evolution = subprocess.Popen(("ssh", "-xn", "n900", ". /etc/profile && t=`mktemp /tmp/cXXXXXX` && osso-addressbook-backup -e $t && cat $t && rm $t"), bufsize = -1, stdout = subprocess.PIPE, stderr = errors, close_fds = True)
 vcal = evolution.stdout
 
 def matcher(unicode, expressions, what):
