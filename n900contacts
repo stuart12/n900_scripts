@@ -26,7 +26,7 @@ import vobject
 import subprocess
 
 myname = os.path.basename(sys.argv[0])
-opts, args = getopt.getopt(sys.argv[1:], "grupP", ["groff", "ps", "utf8"])
+opts, args = getopt.getopt(sys.argv[1:], "grupP", ["groff", "ps", "utf8", "dots"])
 get_calendar = ("ssh", "-xn", "n900", ". /etc/profile && t=`mktemp /tmp/cXXXXXX` && osso-addressbook-backup -e $t && cat $t && rm $t")
 
 of_print = "print"
@@ -41,6 +41,7 @@ big_print = False
 groff_arg1 = "-P"
 groff_arg2 = "-pA4"
 output_format = of_postscript
+add_dots_to_number = False
 for o, a in opts:
 	if o == "--ps":
 		output_format = of_postscript
@@ -48,6 +49,8 @@ for o, a in opts:
 	elif o == "-p":
 		print_list = True
 		big_print = False
+	elif o == "--dots":
+		add_dots_to_number = True
 	elif o == "-P":
 		print_list = True
 		big_print = True
@@ -74,7 +77,7 @@ def format_number(number):
 	else:
 		if number.startswith('+33'):
 			number = '0' + number[3:]
-		if number.startswith('0'):
+		if add_dots_to_number and number.startswith('0'):
 			p = re.compile(r'(\d\d)')
 			number = p.sub(r'\1.', number)
 			number = number[0:-1]
