@@ -107,8 +107,8 @@ def format_contact(contact, troff, min_pager):
 		out = name + ','
 
 	pager = 0
-	if 'x-gender'  in contact.contents:
-		for g in  contact.contents['x-gender']:
+	if 'x-gender' in contact.contents:
+		for g in contact.contents['x-gender']:
 			if g.value == 'female' or g.value == "male":
 				pager = 2
 			else:
