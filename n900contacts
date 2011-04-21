@@ -171,7 +171,10 @@ def format_contact(contact, troff, min_pager):
 
 	if 'email' in contact.contents:
 		for email in contact.contents['email']:
-			out += ' ' + email.value
+			if troff:
+				out += ' ' + email.value.replace('@', '\\:@').replace('.', '\\:.')
+			else:
+				out += ' ' + email.value
 			
 	return out
 
@@ -295,7 +298,7 @@ if big_print:
 """
 else:
 	mess = """.\\"
-.ps 7.2
+.ps 7.5
 .vs \\n[.s]+0.4
 .ll 15c
 .de NP
@@ -306,6 +309,11 @@ else:
 .wh 7.2c NP
 """
 output.write(mess)
+if output_format == of_utf8:
+		output.write('.ll 26c\n')
+		output.write('.po 0\n')
+		output.write('.wh 7.2c\n')
+
 output.write(r'\n[hours]:\n[minutes] \n[dy]/\n[mo]/\n[year]' + '\n')
 if big_print:
 	output.write('.sp 0.3\n')
