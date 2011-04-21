@@ -1,0 +1,21 @@
+run on a machine that has python-vobject. This machine must be able to run a command
+on the N900 using "ssh n900"
+
+with no options just look for a contact
+
+show all the fred's in the contact list on the N900
+
+	n900_contacts fred
+
+print a short list of important contacts
+
+	n900_contacts -p | lp
+
+print a longer list of important and medium contacts
+
+	n900_contacts -P | lp
+
+An important contact is a contact with gender male or female. A medium contact
+is a contact with an undefinded gender.
+
+The printed output is formated for A4 paper.
