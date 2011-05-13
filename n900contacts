@@ -26,7 +26,7 @@ import vobject
 import subprocess
 
 myname = os.path.basename(sys.argv[0])
-opts, args = getopt.getopt(sys.argv[1:], "grupP", ["groff", "ps", "utf8", "dots"])
+opts, args = getopt.getopt(sys.argv[1:], "grupP", ["groff", "ps", "utf8", "dots", "stdin"])
 get_calendar = ("ssh", "-xn", "n900", "t=`mktemp /tmp/cXXXXXX` && run-standalone.sh osso-addressbook-backup -e $t && cat $t && rm $t")
 
 of_print = "print"
@@ -42,6 +42,7 @@ groff_arg1 = "-P"
 groff_arg2 = "-pA4"
 output_format = of_postscript
 add_dots_to_number = False
+use_stdin = False
 for o, a in opts:
 	if o == "--ps":
 		output_format = of_postscript
@@ -54,6 +55,8 @@ for o, a in opts:
 	elif o == "-P":
 		print_list = True
 		big_print = True
+	elif o in ("--stdin"):
+		use_stdin = True
 	elif o in ("--utf8", '-u'):
 		output_format = of_utf8
 		print_list = True
@@ -196,8 +199,11 @@ def eclose(evolution, errors):
 		sys.exit(myname + ": unable to read calendar")
 		
 errors = tempfile.TemporaryFile()
-evolution = subprocess.Popen(get_calendar, bufsize = -1, stdout = subprocess.PIPE, stderr = errors, close_fds = True)
-vcal = evolution.stdout
+if use_stdin:
+	vcal = sys.stdin
+else:
+	evolution = subprocess.Popen(get_calendar, bufsize = -1, stdout = subprocess.PIPE, stderr = errors, close_fds = True)
+	vcal = evolution.stdout
 
 def matcher(unicode, expressions, what):
 #	print "matching", what, "=", `unicode`
