@@ -1,0 +1,16 @@
+#!/bin/sh -ex
+
+# http://wiki.maemo.org/Manual_backup_and_restore
+path=${1?}
+
+f=
+n=n900
+for i in .calendar/calendardb .osso-abook/db .osso-abook-backup/db
+do
+	f="$f $n:/home/user/$i"
+done
+
+rsync --verbose --relative -r "$n:.calendar/calendardb .osso-abook/db .osso-abook-backup/db"  $path
+ssh -xn $n 't=`mktemp /tmp/cXXXXXX` && run-standalone.sh osso-addressbook-backup -e $t && cat $t && rm $t' > $path/address_list
+
+
