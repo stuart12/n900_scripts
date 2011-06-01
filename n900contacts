@@ -27,7 +27,8 @@ import subprocess
 
 myname = os.path.basename(sys.argv[0])
 opts, args = getopt.getopt(sys.argv[1:], "grupP", ["groff", "ps", "utf8", "dots", "stdin"])
-get_calendar = ("ssh", "-xn", "n900", "t=`mktemp /tmp/cXXXXXX` && run-standalone.sh osso-addressbook-backup -e $t && cat $t && rm $t")
+# ugly hack for http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=569273
+get_contacts= ("ssh", "-xn", "n900", "t=`mktemp /tmp/cXXXXXX` && run-standalone.sh osso-addressbook-backup -e $t && sed -e 's/\\\\,/,/g' $t && rm $t")
 
 of_print = "print"
 of_utf8 = "utf8"
@@ -202,7 +203,7 @@ errors = tempfile.TemporaryFile()
 if use_stdin:
 	vcal = sys.stdin
 else:
-	evolution = subprocess.Popen(get_calendar, bufsize = -1, stdout = subprocess.PIPE, stderr = errors, close_fds = True)
+	evolution = subprocess.Popen(get_contacts, bufsize = -1, stdout = subprocess.PIPE, stderr = errors, close_fds = True)
 	vcal = evolution.stdout
 
 def matcher(unicode, expressions, what):
