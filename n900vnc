@@ -1,13 +1,29 @@
 #!/bin/sh -xe
+: apt-get install tightvncserver xvnc4viewer
 machine=${1-172.16.47.3}
 tmp=$(mktemp -t n900xvc.XXXXXX)
 tmp2=$(mktemp -t n900xvc.XXXXXX)
 status=1
-trap "wait; rm $tmp2 $tmp; exit \$status" 0 1 2 15
+trap "wait; rm -f $tmp2 $tmp; exit \$status" 0 1 2 15
 (cat /dev/urandom | tr -cd '_A-Za-f0-9' | head -c 8;echo) > $tmp
 tightvncpasswd -f > $tmp2 < $tmp
-cat $tmp | ssh -xa user@$machine killall x11vnc \; x11vnc --passwdfile /dev/stdin &
+ssh -xa user@$machine killall x11vnc \; x11vnc --passwdfile /dev/stdin < $tmp &
 sleep 3
 xvnc4viewer --PasswordFile=$tmp2 $machine:0
 wait
 status=$?
+
+#    Copyright (C) 2011 Stuart Pook
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
