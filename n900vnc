@@ -1,0 +1,13 @@
+#!/bin/sh -xe
+machine=${1-172.16.47.3}
+tmp=$(mktemp -t n900xvc.XXXXXX)
+tmp2=$(mktemp -t n900xvc.XXXXXX)
+status=1
+trap "wait; rm $tmp2 $tmp; exit \$status" 0 1 2 15
+(cat /dev/urandom | tr -cd '_A-Za-f0-9' | head -c 8;echo) > $tmp
+tightvncpasswd -f > $tmp2 < $tmp
+cat $tmp | ssh -xa user@$machine killall x11vnc \; x11vnc --passwdfile /dev/stdin &
+sleep 3
+xvnc4viewer --PasswordFile=$tmp2 $machine:0
+wait
+status=$?
