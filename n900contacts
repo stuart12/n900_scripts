@@ -140,6 +140,10 @@ def format_contact(contact, troff, min_pager):
 	if pager < min_pager:
 		return ''
 
+	if 'x-sip' in contact.contents:
+		for number in contact.contents['x-sip']:
+			out += ' s' + nbsp + number.value.partition('@')[0]
+
 	if 'adr' in contact.contents:
 		for address in contact.contents['adr']:
 			tag = ''
