@@ -1,24 +1,60 @@
-#!/bin/sh -xe
-delay=3
-case "$1" in
--d)
-	delay="$2"
-	shift 2
-	;;
-esac
-: apt-get install tightvncserver xvnc4viewer
-machine=${1-172.16.47.3}
-tmp=$(mktemp -t n900xvc.XXXXXX)
-tmp2=$(mktemp -t n900xvc.XXXXXX)
-status=1
-trap "wait; rm -f $tmp2 $tmp; exit \$status" 0 1 2 15
-(cat /dev/urandom | tr -cd '_A-Za-f0-9' | head -c 8;echo) > $tmp
-tightvncpasswd -f > $tmp2 < $tmp
-ssh -xa user@$machine killall x11vnc \; x11vnc --passwdfile /dev/stdin < $tmp &
-sleep $delay
-xvnc4viewer --PasswordFile=$tmp2 $machine:0
-wait
-status=$?
+#!/usr/bin/python
+#    Copyright (C) 2011 Stuart Pook
+
+from optparse import OptionParser
+from random import SystemRandom
+import subprocess
+import time
+import sys
+
+parser = OptionParser()
+parser.add_option("-a", "--address", dest="address", default="172.16.47.3", help="address to connect to and to listen on on Nokia")
+parser.add_option("-d", "--delay", type="float", dest="delay", default=3, help="delay to wait for x11vnc to start on Nokia N900")
+(options, args) = parser.parse_args()
+
+rnd = SystemRandom()
+passwd = ""
+for i in xrange(8):
+	passwd += chr(rnd.randint(ord('!') , ord('z')))
+
+tight = subprocess.Popen(["tightvncpasswd", "-f"], stdin= subprocess.PIPE, stdout= subprocess.PIPE, close_fds=True)
+tight.stdin.write(passwd + "\n")
+tight.stdin.close()
+encoded = tight.stdout.read()
+if tight.wait() != 0:
+	sys.exit("password encyption failed")
+
+# should use "-allow" option to x11vnc
+remote = subprocess.Popen(["ssh", "-xa", "-l", "user", options.address, "killall", "-q", "x11vnc", ";", "exec",
+	"x11vnc",
+		"-ncache", "0",
+		"-quiet",
+		"-timeout", str(options.delay + 3),
+		"-nocmds",
+		"-cursor", "arrow",
+		"-safer",
+		"-display", ":0",
+		"-listen", options.address,
+		"--passwdfile", "/dev/stdin"
+	], close_fds=True, stdin=subprocess.PIPE)
+remote.stdin.write(passwd + "\n")
+remote.stdin.close()
+
+time.sleep(options.delay)
+
+viewer = subprocess.Popen(["xvnc4viewer", "--PasswordFile=/dev/stdin", options.address + ":0"], close_fds = True, stdin= subprocess.PIPE)
+viewer.stdin.write(encoded)
+viewer.stdin.close()
+result = 0
+r = viewer.wait()
+if r != 0:
+#	print >> sys.stderr, "local viewer failed", r
+#	result = 1
+	pass
+if remote.wait() != 0:
+	print >> sys.stderr, "remote server failed"
+	result = 1
+sys.exit(result)
 
 #    Copyright (C) 2011 Stuart Pook
 #
@@ -34,3 +70,26 @@ status=$?
 #
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+# old shell script version follows
+#!/bin/sh -xe
+#delay=3
+#case "$1" in
+#-d)
+#	delay="$2"
+#	shift 2
+#	;;
+#esac
+#: apt-get install tightvncserver xvnc4viewer
+#machine=${1-172.16.47.3}
+#tmp=$(mktemp -t n900xvc.XXXXXX)
+#tmp2=$(mktemp -t n900xvc.XXXXXX)
+#status=1
+#trap "wait; rm -f $tmp2 $tmp; exit \$status" 0 1 2 15
+#(cat /dev/urandom | tr -cd '_A-Za-f0-9' | head -c 8;echo) > $tmp
+#tightvncpasswd -f > $tmp2 < $tmp
+#ssh -xa user@$machine killall x11vnc \; x11vnc --passwdfile /dev/stdin < $tmp &
+#sleep $delay
+#xvnc4viewer --PasswordFile=$tmp2 $machine:0
+#wait
+#status=$?
