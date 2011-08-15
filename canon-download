@@ -1,5 +1,6 @@
 #!/usr/bin/python
 #    Copyright (C) 2011 Stuart Pook
+# download photos from Canon EOD 400D using gphoto2, only download photos once, run jhead -autorot
 import subprocess,  string,  sys
 import os.path,  os,  tempfile,  shutil
 
