@@ -1,0 +1,134 @@
+#!/usr/bin/python
+#    Copyright (C) 2011 Stuart Pook
+import subprocess,  string,  sys
+import os.path,  os,  tempfile,  shutil
+
+destination = "."
+
+def get_prompt(gphoto,  cmd):
+	prompt = gphoto.stdout.read(6)
+	if prompt != "gphoto":
+		sys.exit("command " +  cmd + " gave " + prompt)
+
+def start_command(gphoto,  cmd):
+	gphoto.stdin.write(cmd + "\n")
+	gphoto.stdin.flush()
+	line = gphoto.stdout.readline()
+	if string.find(line,  cmd) == -1:
+		sys.exit(cmd + " gave " + line)
+
+def command(gphoto,  cmd,  result):
+	start_command(gphoto,  cmd)
+	line = gphoto.stdout.readline()
+	if string.find(line,  result) == -1:
+		sys.exit(cmd + " gave " + line)
+#	print cmd,  "ok"
+	sys.stdout.flush()
+	get_prompt(gphoto,  cmd)
+	
+def command_no_reply(gphoto,  cmd):
+	start_command(gphoto,  cmd)
+	get_prompt(gphoto,  cmd)
+	
+def cd(gphoto,  dir):
+	command(gphoto, "cd " + dir,   "Remote directory now '" + dir + "'.")
+	
+done = os.path.expanduser("~/var/canon-download.read")
+seen = set(l.rstrip() for l in open(done))
+seen = frozenset(seen.union(os.listdir(destination)))
+fd = os.open(done, os.O_WRONLY|os.O_APPEND)
+update_seen = os.fdopen(fd,  "w")
+
+tmp = tempfile.mkdtemp(prefix="canonread")
+
+gphoto = subprocess.Popen(["gphoto2",  "--shell",  "--quiet"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+cd(gphoto, "/")
+command(gphoto,  "lcd " + tmp,  "Local directory now '" + tmp + "'.")
+camera_root = "/store_00010001/DCIM"
+cd(gphoto, camera_root)
+
+start_command(gphoto,  "ls")
+line = gphoto.stdout.readline()
+ndirectories = int(line.rstrip())
+print ndirectories,  "directories"
+
+directories = []
+for i in xrange(ndirectories):
+	dir = gphoto.stdout.readline().rstrip()
+	if string.lower(dir[3:8]) != "canon" or len(dir) != 8:
+		sys.exit("bad subdirectory " + dir)
+	directories.append(dir)
+print directories
+line = gphoto.stdout.readline()
+if line.rstrip() != "0":
+	sys.exit("missing 0 after toplevel ls")
+	
+get_prompt(gphoto,  "ls")
+	
+to_do = []
+skipping = 0
+
+for d in directories:
+	cmd = "ls " + d
+	start_command(gphoto,  cmd)
+	line = gphoto.stdout.readline()
+	if line.rstrip() != "0":
+		sys.exit("missing 0 before bottom level ls:" + cmd)
+	line = gphoto.stdout.readline()
+	nfiles= int(line.rstrip())
+	print nfiles,  "files",  "in",  d
+	for r in xrange(nfiles):
+		fname = gphoto.stdout.readline().rstrip()
+		if string.lower(fname[0:4]) != "img_" or string.lower(fname[8:]) != ".jpg":
+			sys.exit("bad file name " + fname + " in " + d)
+		new_name = d[0:3] + '_' + fname[4:8] + ".jpg"
+		if new_name in seen:
+#			print "skipping",  new_name
+			skipping += 1
+		else:
+			to_do.append([d,  fname,  new_name])
+	get_prompt(gphoto,  cmd)
+
+print len(to_do),  "to copy, skipping",  skipping
+
+jhead = ["jhead",  "-ft",  "-autorot",  "-q"]
+cur_dir = None
+for t in to_do:
+	if t[0] != cur_dir:
+		cur_dir = t[0]
+		cd(gphoto, camera_root + "/" + cur_dir)
+		
+	command_no_reply(gphoto,  "get " + t[1])
+	final_file = os.path.join(destination,  t[2])
+	tmp_file = final_file + ".tmp"
+	out = open(tmp_file, "w")
+	from_gphoto = os.path.join(tmp, t[1])
+	shutil.copyfileobj(open(from_gphoto), out)
+	out.flush()
+	os.fsync(out.fileno())
+	out.close()
+	os.remove(from_gphoto)
+	subprocess.check_call(jhead + [tmp_file])
+	os.rename(tmp_file, final_file)
+	update_seen.write(t[2] + "\n")
+	update_seen.flush()
+
+os.rmdir(tmp)
+update_seen.close()
+
+gphoto.stdin.close()
+if gphoto.wait() != 0:
+	sys.exit("gphoto failed")
+
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
