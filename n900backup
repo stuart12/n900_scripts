@@ -10,7 +10,8 @@ do
 	f="$f $n:/home/user/$i"
 done
 
-rsync --verbose --relative -r "$n:.calendar/calendardb .osso-abook/db .osso-abook-backup/db"  $path
+rsync --verbose --relative -r "$n:.calendar/calendardb .osso-abook/db .osso-abook-backup/db" $path
 ssh -xn $n 't=`mktemp /tmp/cXXXXXX` && run-standalone.sh osso-addressbook-backup -e $t && cat $t && rm $t' > $path/address_list
 
 
+ssh -xn $n 'run-standalone.sh maecaltool --operation export --calendar N900 --file /proc/self/fd/9 9>&1 1>&2' > $path/N900.ics
