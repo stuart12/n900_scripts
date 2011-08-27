@@ -51,7 +51,7 @@ cd(gphoto, camera_root)
 start_command(gphoto,  "ls")
 line = gphoto.stdout.readline()
 ndirectories = int(line.rstrip())
-print ndirectories,  "directories"
+#print ndirectories,  "directories"
 
 directories = []
 for i in xrange(ndirectories):
@@ -59,7 +59,7 @@ for i in xrange(ndirectories):
 	if string.lower(dir[3:8]) != "canon" or len(dir) != 8:
 		sys.exit("bad subdirectory " + dir)
 	directories.append(dir)
-print directories
+#print directories
 line = gphoto.stdout.readline()
 if line.rstrip() != "0":
 	sys.exit("missing 0 after toplevel ls")
@@ -77,7 +77,7 @@ for d in directories:
 		sys.exit("missing 0 before bottom level ls:" + cmd)
 	line = gphoto.stdout.readline()
 	nfiles= int(line.rstrip())
-	print nfiles,  "files",  "in",  d
+#	print nfiles,  "files",  "in",  d
 	for r in xrange(nfiles):
 		fname = gphoto.stdout.readline().rstrip()
 		if string.lower(fname[0:4]) != "img_" or string.lower(fname[8:]) != ".jpg":
