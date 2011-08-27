@@ -1,16 +1,24 @@
-#!/bin/sh -ex
+#!/bin/sh -e
 
 # http://wiki.maemo.org/Manual_backup_and_restore
 path=${1?}
 
-f=
 n=n900
-for i in .calendar/calendardb .osso-abook/db .osso-abook-backup/db
-do
-	f="$f $n:/home/user/$i"
-done
 
-rsync --verbose --relative -r "$n:.calendar/calendardb .osso-abook/db .osso-abook-backup/db"  $path
+rsync --times --verbose --relative -r "$n:.calendar/calendardb .osso-abook/db .osso-abook-backup/db"  $path
 ssh -xn $n 't=`mktemp /tmp/cXXXXXX` && run-standalone.sh osso-addressbook-backup -e $t && cat $t && rm $t' > $path/address_list
 
 
+# Copyright 2011 Stuart Pook
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
