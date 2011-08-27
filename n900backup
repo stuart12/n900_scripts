@@ -1,15 +1,16 @@
-#!/bin/sh -e
+#!/bin/sh -ex
+# Copyright 2011 (c) Stuart Pook
 
 # http://wiki.maemo.org/Manual_backup_and_restore
 path=${1?}
 
 n=n900
 
-rsync --times --verbose --relative -r "$n:.calendar/calendardb .osso-abook/db .osso-abook-backup/db"  $path
-ssh -xn $n 't=`mktemp /tmp/cXXXXXX` && run-standalone.sh osso-addressbook-backup -e $t && cat $t && rm $t' > $path/address_list
+rsync --times --verbose --relative -r "$n:.calendar/calendardb .osso-abook/db .osso-abook-backup/db bin" $path
+ssh -axn $n 't=`mktemp /tmp/cXXXXXX` && run-standalone.sh osso-addressbook-backup -e $t && cat $t && rm $t' > $path/address_list.tmp && mv $path/address_list.tmp $path/address_list
+ssh -axn $n 'run-standalone.sh maecaltool --operation export --calendar N900 --file /proc/self/fd/9 9>&1 1>&2' > $path/N900.ics.tmp && mv $path/N900.ics.tmp $path/N900.ics
 
-
-# Copyright 2011 Stuart Pook
+# Copyright (c) 2011 Stuart Pook
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
