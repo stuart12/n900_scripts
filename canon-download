@@ -1,28 +1,42 @@
 #!/usr/bin/python
 #    Copyright (C) 2011 Stuart Pook
 # download photos from Canon EOD 400D using gphoto2, only download photos once, run jhead -autorot
-import subprocess,  string,  sys
+import subprocess,  string,  sys,  time
 import os.path,  os,  tempfile,  shutil
+
+verbose = True
 
 destination = "."
 
 def get_prompt(gphoto,  cmd):
+	time.sleep(0.5)
 	prompt = gphoto.stdout.read(6)
 	if prompt != "gphoto":
-		sys.exit("command " +  cmd + " gave " + prompt)
+		sys.exit("get_prompt: command " +  cmd + " gave " + prompt)
 
 def start_command(gphoto,  cmd):
 	gphoto.stdin.write(cmd + "\n")
 	gphoto.stdin.flush()
 	line = gphoto.stdout.readline()
+	if verbose:
+		print "VERBOSE: start_command",  cmd, "gave",  line
 	if string.find(line,  cmd) == -1:
-		sys.exit(cmd + " gave " + line)
+		sys.exit("ERROR: start_command:" + cmd + " gave " + line)
 
 def command(gphoto,  cmd,  result):
 	start_command(gphoto,  cmd)
+	time.sleep(0.5)
 	line = gphoto.stdout.readline()
+	if verbose:
+		print "VERBOSE: skipping",  line
+	if string.find(line,  cmd) == -1:
+		sys.exit("EROOR: command1: \"" + cmd + "\" gave \"" + line + "\"" + " looking for " + cmd)
+	time.sleep(0.5)
+	line = gphoto.stdout.readline()
+	if verbose:
+		print "VERBOSE: command2",  cmd, "gave",  line,  "looking for",  result
 	if string.find(line,  result) == -1:
-		sys.exit(cmd + " gave " + line)
+		sys.exit("command: \"" + cmd + "\" gave \"" + line + "\"")
 #	print cmd,  "ok"
 	sys.stdout.flush()
 	get_prompt(gphoto,  cmd)
@@ -42,13 +56,14 @@ update_seen = os.fdopen(fd,  "w")
 
 tmp = tempfile.mkdtemp(prefix="canonread")
 
-gphoto = subprocess.Popen(["gphoto2",  "--shell",  "--quiet"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+gphoto = subprocess.Popen(["gphoto2",  "--shell",  "--quiet"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,  stderr=file("/dev/null",  "w"))
 cd(gphoto, "/")
 command(gphoto,  "lcd " + tmp,  "Local directory now '" + tmp + "'.")
 camera_root = "/store_00010001/DCIM"
 cd(gphoto, camera_root)
 
 start_command(gphoto,  "ls")
+line = gphoto.stdout.readline()
 line = gphoto.stdout.readline()
 ndirectories = int(line.rstrip())
 #print ndirectories,  "directories"
@@ -73,8 +88,9 @@ for d in directories:
 	cmd = "ls " + d
 	start_command(gphoto,  cmd)
 	line = gphoto.stdout.readline()
+	line = gphoto.stdout.readline()
 	if line.rstrip() != "0":
-		sys.exit("missing 0 before bottom level ls:" + cmd)
+		sys.exit("missing 0 before bottom level ls:" + cmd + " found " + line)
 	line = gphoto.stdout.readline()
 	nfiles= int(line.rstrip())
 #	print nfiles,  "files",  "in",  d
@@ -100,6 +116,7 @@ for t in to_do:
 		cd(gphoto, camera_root + "/" + cur_dir)
 		
 	command_no_reply(gphoto,  "get " + t[1])
+	time.sleep(1)
 	final_file = os.path.join(destination,  t[2])
 	tmp_file = final_file + ".tmp"
 	out = open(tmp_file, "w")
@@ -111,7 +128,7 @@ for t in to_do:
 	os.remove(from_gphoto)
 	subprocess.check_call(jhead + [tmp_file])
 	os.rename(tmp_file, final_file)
-	update_seen.write(t[2] + "\n")
+#	update_seen.write(t[2] + "\n")
 	update_seen.flush()
 
 os.rmdir(tmp)
