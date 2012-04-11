@@ -1,0 +1,36 @@
+git pull origin master
+git commit -m "$*" . && git push
+
+# the first time in a new directory
+
+# git init
+# git remote add origin git@github.com:stuart12/python-scripts.git
+# git pull origin master
+
+exit $?
+
+Global setup:
+
+ Set up git
+  git config --global user.name "Stuart Pook"
+  git config --global user.email github78@pook.it
+      
+
+Next steps:
+
+  mkdir gdownload
+  cd gdownload
+  git init
+  touch README
+  git add README
+  git commit -m 'first commit'
+  git remote add origin git@github.com:stuart12/gdownload.git
+  git push -u origin master
+      
+
+Existing Git Repo?
+
+  cd existing_git_repo
+  git remote add origin git@github.com:stuart12/gdownload.git
+  git push -u origin master
+      
