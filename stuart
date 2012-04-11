@@ -12,8 +12,6 @@ exit $?
 Global setup:
 
  Set up git
-  git config --global user.name "Stuart Pook"
-  git config --global user.email github78@pook.it
       
 
 Next steps:
