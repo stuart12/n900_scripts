@@ -28,7 +28,10 @@ Next steps:
 
 Existing Git Repo?
 
-  cd existing_git_repo
-  git remote add origin git@github.com:stuart12/gdownload.git
-  git push -u origin master
-      
+
+mkdir python-scripts
+cd python-scripts
+git init
+git remote add origin git@github.com:stuart12/python-scripts.git
+git pull origin master
+
