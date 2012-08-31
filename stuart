@@ -1,6 +1,10 @@
 git pull origin master
 git commit -m "$*" . && git push
 
+# add a file
+: git add todo
+
+
 # the first time in a new directory
 
 # git init
@@ -32,3 +36,8 @@ Existing Git Repo?
   git remote add origin git@github.com:stuart12/gdownload.git
   git push -u origin master
       
+
+# http://stackoverflow.com/questions/658885/how-do-you-get-git-to-always-pull-from-a-specific-branch
+# :; git config branch.master.remote origin
+# :; git config branch.master.merge refs/heads/master
+
