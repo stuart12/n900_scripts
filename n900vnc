@@ -21,7 +21,7 @@ remote_command = "x11vnc"
 
 parser = OptionParser()
 parser.add_option("-a", "--address", dest="address", default="172.16.47.3", help="address to connect to and listen on [%default]")
-parser.add_option("-d", "--delay", type="int", dest="delay", default=10, help="how long the remote " + remote_command + " waits for a connection [%default]")
+parser.add_option("-t", "--timeout", "-d", "--delay", metavar="TIMEOUT", type="int", dest="delay", default=3, help="how long the remote " + remote_command + " waits for a connection [%default]")
 (options, args) = parser.parse_args()
 
 rnd = SystemRandom()
@@ -34,11 +34,12 @@ tight = subprocess.Popen(["tightvncpasswd", "-f"], stdin= subprocess.PIPE, stdou
 tight.stdin.write(passwd)
 tight.stdin.close()
 encoded = tight.stdout.read()
+tight.stdout.close()
 if tight.wait() != 0:
 	sys.exit("password encyption failed")
 
 # should use "-allow" option to x11vnc
-remote = subprocess.Popen(["ssh", "-xa", "-l", "user", options.address,
+remote = subprocess.Popen(["ssh", "-xak", "-l", "user", options.address,
 	"exec", remote_command,
 		"-ncache", "0",
 		"-quiet",
@@ -48,7 +49,7 @@ remote = subprocess.Popen(["ssh", "-xa", "-l", "user", options.address,
 		"-safer",
 		"-display", ":0",
 		"-listen", options.address,
-		"--passwdfile", "/dev/stdin"
+		"-passwdfile", "/dev/stdin"
 	], close_fds=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 remote.stdin.write(passwd)
 remote.stdin.close()
@@ -57,11 +58,8 @@ for l in iter(remote.stdout.readline, ''):
 	prefix = b"PORT=59"
 	if l.find(prefix) == 0:
 		port = l[len(prefix):].strip().decode()
-#		print("GOT PORT " + port)
 		break
 	print(b">> " + l)
-		
-#time.sleep(options.delay)
 
 viewer = subprocess.Popen(["xvnc4viewer", "--PasswordFile=/dev/stdin", options.address + ":" + port], close_fds = True, stdin= subprocess.PIPE)
 viewer.stdin.write(encoded)
@@ -83,16 +81,3 @@ if remote.wait() != 0:
 	print("remote server failed", file=sys.stderr)
 	result = 1
 sys.exit(result)
-
-#    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the GNU General Public License as published by
-#    the Free Software Foundation, either version 3 of the License, or
-#    (at your option) any later version.
-#
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU General Public License for more details.
-#
-#    You should have received a copy of the GNU General Public License
-#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
