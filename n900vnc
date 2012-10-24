@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Copyright (c) 2011, 2012 Stuart Pook (http://www.pook.it/)
+# n900vnc Copyright (C) 2011, 2012 Stuart Pook (http://www.pook.it/)
 # This program is free software: you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
 # Foundation, either version 3 of the License, or (at your option) any later version.
@@ -55,6 +55,8 @@ remote.stdin.write(passwd)
 remote.stdin.close()
 
 for l in iter(remote.stdout.readline, ''):
+	if not l:
+		sys.exit("eof reading connection to " + options.address)
 	prefix = b"PORT=59"
 	if l.find(prefix) == 0:
 		port = l[len(prefix):].strip().decode()
