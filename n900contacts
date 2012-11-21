@@ -75,12 +75,14 @@ for o, a in opts:
 	elif o in ("--stdin"):
 		use_stdin = True
 	elif o in ("--utf8", '-u'):
+		big_print = True
 		output_format = of_utf8
 		print_list = True
 		groff_arg1 = "-T"
 		groff_arg2 = "utf8"
 	elif o in ("--groff", "-g"):
 		output_format = of_groff
+		print_list = True
 
 now = time.time()
 
@@ -95,7 +97,9 @@ def format_number(number):
 		if number.startswith('00'):
 			number = '+' + number[2:]
 	else:
-		if number.startswith('+33'):
+		if number.startswith('00'):
+			number = '+' + number[2:]
+		elif number.startswith('+33'):
 			number = '0' + number[3:]
 		if add_dots_to_number and number.startswith('0'):
 			p = re.compile(r'(\d\d)')
@@ -103,6 +107,11 @@ def format_number(number):
 			number = number[0:-1]
 	return number
 
+def insert(set, value):
+	n = len(set)
+	set.add(value)
+	return n != len(set)
+	
 def format_contact(contact, troff, min_pager):
 	if troff:
 		or_mark = r" \(or "
@@ -133,7 +142,8 @@ def format_contact(contact, troff, min_pager):
 				pager = 2
 			else:
 				pager = 1
-		
+	
+	numbers = set()
 	if 'tel' in contact.contents:
 		for number in contact.contents['tel']:
 			tag = ''
@@ -149,16 +159,20 @@ def format_contact(contact, troff, min_pager):
 				elif type == 'PAGER':
 					break
 			else:
-				out += ' '
-				if len(tag) > 0:
-					out += tag + nbsp
-				out += format_number(number.value)
+				formated_number = format_number(number.value)
+				if insert(numbers, formated_number):
+					out += ' '
+					if len(tag) > 0:
+						out += tag + nbsp
+					out += formated_number
 	if pager < min_pager:
 		return ''
 
 	if 'x-sip' in contact.contents:
 		for number in contact.contents['x-sip']:
-			out += ' s' + nbsp + number.value.partition('@')[0]
+			formated_number = format_number(number.value.partition('@')[0])
+			if insert(numbers, formated_number):
+				out += ' s' + nbsp + formated_number
 
 	if 'adr' in contact.contents:
 		for address in contact.contents['adr']:
