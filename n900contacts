@@ -52,7 +52,7 @@ def format_number(number, options):
 	else:
 		if number.startswith('00'):
 			number = '+' + number[2:]
-		elif number.startswith('+33'):
+		if number.startswith('+33'):
 			number = '0' + number[3:]
 		if options.dots and number.startswith('0'):
 			p = re.compile(r'(\d\d)')
@@ -232,14 +232,14 @@ def match(contact, expressions):
 			
 	return False
 	
-def show_contacts(args, options):
+def show_contacts(vcal, args, options):
 	expressions = []
 	for a in args:
 		expressions.append(re.compile(strip_accents(a.decode('utf-8')), re.IGNORECASE))
 	for contact in vobject.readComponents(vcal):
 		if (match(contact, expressions)):
 #			print dir(contact), contact.n.value.__doc__, `contact.n.value.given`, dir(contact.n.value)
-			print(format_contact(contact, False, 0).encode('utf-8'))
+			print(format_contact(contact, False, 0, options).encode('utf-8'))
 #		express: for e in expressions:
 #			for k in ("fn", "n", "org"):
 #				if k in contact.contents:
@@ -327,7 +327,7 @@ def main():
 		vcal = evolution.stdout
 
 	if not options.short_postscript and not options.full_postscript and not options.utf8 and not options.groff:
-		show_contacts(args, options)
+		show_contacts(vcal, args, options)
 		return
 
 	full = options.full_postscript or options.full
