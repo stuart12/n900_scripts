@@ -441,15 +441,9 @@ def main():
 	if not options.print_list:
 		return
 
-	if full:
-		printer = "lp"
-	else:
-		printer = "lph"
+	printer = "lp"
 
-	options = popen2.Popen3("lpoptions")
-	lpoptions = options.fromchild.readline()
-	options.fromchild.close()
-	turn_over = options.wait() != 0 or not "Duplex=Duplex" in lpoptions
+	turn_over = not "Duplex=Duplex" in subprocess.Popen(["lpoptions"], stdout=subprocess.PIPE).communicate()[0]
 
 	postscript.seek(0)
 	child = os.fork()
