@@ -176,11 +176,11 @@ def strip_accents(uc):
 			d += i
 	return d
 
-def eclose(evolution, errors):
+def eclose(evolution, errors, cmd):
 	if evolution.wait() != 0:
 		errors.seek(0)
 		sys.stderr.writelines(errors)
-		sys.exit(myname + ": unable to read calendar")
+		raise MyError("%s failed (%d)" % (cmd[0], evolution.returncode))
 
 def matcher(unicode, expressions, what):
 #	print "matching", what, "=", `unicode`
@@ -248,7 +248,12 @@ def show_contacts(vcal, args, options):
 #					print format_contact(contact, False, 0).encode('utf-8')
 #					break express
 #	eclose(evolution, errors)
-	sys.exit(0)
+
+class null_subprocess():
+	def __init__(self, stdout):
+		self.stdout = stdout
+	def wait(self):
+		return 0
 
 def main():
 	myname = os.path.basename(sys.argv[0])
@@ -267,8 +272,12 @@ def main():
 	parser.add_option("--dump", action="store_true", help="dump the raw contact list")
 	parser.add_option("--print", dest="print_list", action="store_true", help="print")
 	parser.add_option("--text_size", type='float', help="text size")
+	parser.add_option("--host", default="n900", help="host to contact [%default]")
 
 	(options, args) = parser.parse_args()
+	
+	get_contacts= ["ssh", "-xn", options.host,
+		"t=`mktemp /tmp/cXXXXXX` && run-standalone.sh osso-addressbook-backup -e $t && sed -e 's/\\\\,/,/g' $t && rm $t"]
 	
 #	opts, args = getopt.getopt(sys.argv[1:], "grupP", ["groff", "ps", "utf8", "dots", "stdin"])
 
@@ -318,13 +327,13 @@ def main():
 		
 	errors = tempfile.TemporaryFile()
 	if options.stdin:
-		vcal = sys.stdin
+		evolution = null_subprocess(sys.stdin)
 	else:
 		evolution = subprocess.Popen(get_contacts, bufsize = -1, stdout = subprocess.PIPE, stderr = errors, close_fds = True)
-		vcal = evolution.stdout
 
 	if not options.short_postscript and not options.full_postscript and not options.utf8 and not options.groff:
-		show_contacts(vcal, args, options)
+		show_contacts(evolution.stdout, args, options)
+		eclose(evolution, errors, get_contacts)
 		return
 
 	full = options.full_postscript or options.full
@@ -387,14 +396,12 @@ def main():
 		output.write('.sp 0.3\n')
 
 	contacts = []
-	for contact in vobject.readComponents(vcal):
+	for contact in vobject.readComponents(evolution.stdout):
 		line = format_contact(contact, True, full and 1 or 2, options)
 		if line:
 			contacts.append(line)
 
-	if not options.stdin:
-		if evolution.wait():
-			raise MyError("%s failed (%d)" % (get_contacts[0], evolution.returncode))
+	eclose(evolution, errors, get_contacts)
 
 	contacts.sort(locale.strcoll)
 
