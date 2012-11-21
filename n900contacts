@@ -89,64 +89,61 @@ def format_contact(contact, troff, min_pager, options):
 		out = name + ','
 
 	pager = 0
-	if 'x-gender' in contact.contents:
-		for g in contact.contents['x-gender']:
-			if g.value == 'female' or g.value == "male":
-				pager = 2
-			else:
-				pager = 1
+	for g in contact.contents.get('x-gender', []):
+		if g.value == 'female' or g.value == "male":
+			pager = 2
+		else:
+			pager = 1
 	
 	numbers = set()
-	if 'tel' in contact.contents:
-		for number in contact.contents['tel']:
-			tag = ''
-			for type in number.params['TYPE']:
-				if type == 'CELL':
-					tag += 'm'
-				elif type == 'HOME':
-					tag += 'h'
-				elif type == 'FAX':
-					tag += 'f'
-				elif type == 'WORK':
-					tag += 'w'
-				elif type == 'PAGER':
-					break
-			else:
-				formated_number = format_number(number.value, options)
-				if insert(numbers, formated_number):
-					out += ' '
-					if tag:
-						out += tag + nbsp
-					out += formated_number
+	for number in contact.contents.get('tel', []):
+		tag = ''
+		for type in number.params['TYPE']:
+			if type == 'CELL':
+				tag += 'm'
+			elif type == 'HOME':
+				tag += 'h'
+			elif type == 'FAX':
+				tag += 'f'
+			elif type == 'WORK':
+				tag += 'w'
+			elif type == 'PAGER':
+				break
+		else:
+			formated_number = format_number(number.value, options)
+			if insert(numbers, formated_number):
+				out += ' '
+				if tag:
+					out += tag + nbsp
+				out += formated_number
 	if pager < min_pager:
 		return ''
 
-	if 'x-sip' in contact.contents:
-		for number in contact.contents['x-sip']:
-			formated_number = format_number(number.value.partition('@')[0], options)
-			if insert(numbers, formated_number):
-				out += ' s' + nbsp + formated_number
+	for number in contact.contents.get('x-sip', []):
+		formated_number = format_number(number.value.partition('@')[0], options)
+		if insert(numbers, formated_number):
+			out += ' s' + nbsp + formated_number
 
-	if 'adr' in contact.contents:
-		for address in contact.contents['adr']:
-			tag = ''
-			try:
-				for type in address.params['TYPE']:
-					if type == 'HOME':
-						tag += 'h'
-					elif type == 'WORK':
-						tag += 'w'
-			except KeyError:
-				pass
-			v = address.value
-			for v in (v.box, v.extended, v.street, v.code, v.city, v.region, v.country):
-				if len(v) > 0:
-					out += ' '
-					if len(tag):
-						out += tag + nbsp
-						tag = ''
-					for vv in v:
-						out += vv
+	for address in contact.contents.get('adr', []):
+		tag = ''
+		try:
+			for type in address.params['TYPE']:
+				if type == 'HOME':
+					tag += 'h'
+				elif type == 'WORK':
+					tag += 'w'
+		except KeyError:
+			pass
+		v = address.value
+		for v in (v.box, v.extended, v.street, v.code, v.city, v.region, v.country):
+			if len(v) > 0:
+				out += ' '
+				if len(tag):
+					out += tag + nbsp
+					tag = ''
+				for vv in v:
+					out += vv
+
 	if 'note' in contact.contents:
 		done1 = False
 		for note in contact.contents['note']:
@@ -160,12 +157,11 @@ def format_contact(contact, troff, min_pager, options):
 		if done1:
 			out += ')'
 
-	if 'email' in contact.contents:
-		for email in contact.contents['email']:
-			if troff:
-				out += ' ' + email.value.replace('@', '\\:@').replace('.', '\\:.')
-			else:
-				out += ' ' + email.value
+	for email in contact.contents.get('email', []):
+		if troff:
+			out += ' ' + email.value.replace('@', '\\:@').replace('.', '\\:.')
+		else:
+			out += ' ' + email.value
 			
 	return out
 
