@@ -11,7 +11,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
+
 # run on a machine that has python-vobject. This machine must be able to run a command on the Nokia N900 using "ssh n900"
 
 # with no options just look for a contact as given in the arguments
@@ -19,7 +19,7 @@
 # show all the fred's in the contact list on the N900
 #	n900_contacts fred
 
-# print a short list of important contacts
+# print a short list of important contacts formatted using groff
 #	n900_contacts -p | lp
 
 # print a longer list of important and medium contacts
@@ -27,6 +27,8 @@
 
 # An important contact is a contact with gender male or female. A medium contact is a contact with an undefinded gender.
 # The printed output is formated for A4 paper.
+
+from __future__ import print_function
 
 import sys;
 import os;
@@ -278,7 +280,7 @@ if not print_list:
 	for contact in vobject.readComponents(vcal):
 		if (match(contact, expressions)):
 #			print dir(contact), contact.n.value.__doc__, `contact.n.value.given`, dir(contact.n.value)
-			print format_contact(contact, False, 0).encode('utf-8')
+			print(format_contact(contact, False, 0).encode('utf-8'))
 #		express: for e in expressions:
 #			for k in ("fn", "n", "org"):
 #				if k in contact.contents:
@@ -379,7 +381,7 @@ if child == 0:
 	sys.exit("execl failed")
 pid, status = os.waitpid(child, 0)
 if status:
-	sys.exit('groff failed: ' + `status`)
+	sys.exit('groff failed: %d' % status)
 
 if output_format != of_print:
 	sys.exit()
@@ -408,7 +410,7 @@ if status:
 	sys.exit(printer + ' failed')
 
 if turn_over:
-	print "turn the paper over and hit return ", 
+	print("turn the paper over and hit return ", end="")
 	sys.stdin.readline()
 	
 	postscript.seek(0)
