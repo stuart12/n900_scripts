@@ -278,45 +278,6 @@ def main():
 	
 	get_contacts= ["ssh", "-xn", options.host,
 		"t=`mktemp /tmp/cXXXXXX` && run-standalone.sh osso-addressbook-backup -e $t && sed -e 's/\\\\,/,/g' $t && rm $t"]
-	
-#	opts, args = getopt.getopt(sys.argv[1:], "grupP", ["groff", "ps", "utf8", "dots", "stdin"])
-
-#	of_print = "print"
-#	of_utf8 = "utf8"
-#	of_postscript = "postscript"
-#	of_groff = "groff"
-#	output_format = "print"
-#	print_list = False
-#	big_print = False
-#	groff_arg1 = "-P"
-#	groff_arg2 = "-pA4"
-#	output_format = of_postscript
-#	add_dots_to_number = False
-#	use_stdin = False
-#	for o, a in opts:
-#		if o == "--ps":
-#			output_format = of_postscript
-#			print_list = True
-#		elif o == "-p":
-#			print_list = True
-#			big_print = False
-#		elif o == "--dots":
-#			add_dots_to_number = True
-#		elif o == "-P":
-#			print_list = True
-#			big_print = True
-#		elif o in ("--stdin"):
-#			use_stdin = True
-#		elif o in ("--utf8", '-u'):
-#			big_print = True
-#			output_format = of_utf8
-#			print_list = True
-#			groff_arg1 = "-T"
-#			groff_arg2 = "utf8"
-#		elif o in ("--groff", "-g"):
-#			output_format = of_groff
-#			print_list = True
-			
 
 	#locale.setlocale(locale.LC_COLLATE, 'fr_FR.iso885915@euro')
 	locale.setlocale(locale.LC_ALL, '')
