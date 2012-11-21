@@ -270,6 +270,7 @@ def main():
 	parser.add_option("--stdin", action="store_true", help="read stdin")
 	parser.add_option("--dump", action="store_true", help="dump the raw contact list")
 	parser.add_option("--print", dest="print_list", action="store_true", help="print")
+	parser.add_option("--text_size", type='float', help="text size")
 
 	(options, args) = parser.parse_args()
 	
@@ -351,8 +352,12 @@ def main():
 	output.write(mess)
 
 	if full:
+		sz = 11
+		if options.text_size:
+			sz = options.text_size
+		output.write('.ps %f\n' % sz)
+			
 		mess = """.\\"
-.ps 10
 .vs \\n[.s]+0.9
 .de NP
 'bp
@@ -361,8 +366,11 @@ def main():
 .wh -0.8c NP
 """
 	else:
+		sz = 7.8
+		if options.text_size:
+			sz = options.text_size
+		output.write('.ps %f\n' % sz)
 		mess = """.\\"
-.ps 7.5
 .vs \\n[.s]+0.4
 .ll 15c
 .de NP
