@@ -29,6 +29,7 @@
 # The printed output is formated for A4 paper.
 
 from __future__ import print_function
+from __future__ import with_statement # This isn't required in Python 2.6
 
 import sys;
 import os;
@@ -39,6 +40,9 @@ import tempfile
 import vobject
 import subprocess
 import optparse
+import errno
+import time
+import stat
 
 class MyError(Exception):
 	pass
@@ -249,54 +253,52 @@ def show_contacts(vcal, args, options):
 #					break express
 #	eclose(evolution, errors)
 
-class null_subprocess():
-	def __init__(self, stdout):
-		self.stdout = stdout
-	def wait(self):
-		return 0
-
-def main():
-	myname = os.path.basename(sys.argv[0])
+def get_cache_file(options):
 # ugly hack for http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=569273
-	get_contacts= ["ssh", "-xn", "n900",
-		"t=`mktemp /tmp/cXXXXXX` && run-standalone.sh osso-addressbook-backup -e $t && sed -e 's/\\\\,/,/g' $t && rm $t"]
-	
-	parser = optparse.OptionParser()
-	parser.add_option("-g", "--groff", action="store_true", help="produce groff output")
-	parser.add_option("-p", "--short_postscript", action="store_true", help="produce PostScript list")
-	parser.add_option("-P", "--full_postscript", action="store_true", help="produce full PostScript list")
-	parser.add_option("-f", "--full", action="store_true", help="produce full list")
-	parser.add_option("-d", "--dots", action="store_true", help="add dots to numbers")
-	parser.add_option("-u", "--utf8", action="store_true", help="product a full UTF-8 list")
-	parser.add_option("--stdin", action="store_true", help="read stdin")
-	parser.add_option("--dump", action="store_true", help="dump the raw contact list")
-	parser.add_option("--print", dest="print_list", action="store_true", help="print")
-	parser.add_option("--text_size", type='float', help="text size")
-	parser.add_option("--host", default="n900", help="host to contact [%default]")
-
-	(options, args) = parser.parse_args()
-	
 	get_contacts= ["ssh", "-xn", options.host,
 		"t=`mktemp /tmp/cXXXXXX` && run-standalone.sh osso-addressbook-backup -e $t && sed -e 's/\\\\,/,/g' $t && rm $t"]
-
-	#locale.setlocale(locale.LC_COLLATE, 'fr_FR.iso885915@euro')
-	locale.setlocale(locale.LC_ALL, '')
-	locale.setlocale(locale.LC_COLLATE, 'fr_FR.UTF-8')
 	
-	if options.dump:
-		os.execvp(get_contacts[0], get_contacts)
-		
-	errors = tempfile.TemporaryFile()
-	if options.stdin:
-		evolution = null_subprocess(sys.stdin)
+	if options.cache:
+		mode = 0o666
+		try:
+			old = open(options.cache, "r")
+		except IOError, e:
+			if e.errno != errno.ENOENT:
+				raise e
+			if options.verbose:
+				print("no cache " + options.cache, file=sys.stderr)
+		else:
+			stat_buf = os.fstat(old.fileno())
+			if stat_buf.st_mtime > time.time() - options.cache_lifetime:
+				if options.verbose:
+					print("reusing cache " + options.cache, file=sys.stderr)
+				return old
+			mode = stat.S_IMODE(stat_buf.st_mode)
+			old.close()
+			if options.verbose:
+				print("cache too old %s (new mode %#o)" % (options.cache, mode), file=sys.stderr)
+			
+		tmp = options.cache + ".tmp"
+		agenda = os.fdopen(os.open(tmp, os.O_RDWR | os.O_CREAT | os.O_TRUNC, mode))
 	else:
-		evolution = subprocess.Popen(get_contacts, bufsize = -1, stdout = subprocess.PIPE, stderr = errors, close_fds = True)
+		agenda = tempfile.TemporaryFile()
 
-	if not options.short_postscript and not options.full_postscript and not options.utf8 and not options.groff:
-		show_contacts(evolution.stdout, args, options)
-		eclose(evolution, errors, get_contacts)
-		return
-
+	errors = tempfile.TemporaryFile()
+	evolution = subprocess.Popen(get_contacts, bufsize=-1, stdout=agenda, stderr=errors, close_fds=True)
+	if evolution.wait() != 0:
+		if options.cache:
+			os.remove(tmp)
+		errors.seek(0)
+		sys.stderr.writelines(errors)
+		raise MyError("%s failed (%d)" % (cmd[0], evolution.returncode))
+	
+	agenda.seek(0)
+	if options.cache:
+		os.rename(tmp, options.cache)
+	return agenda
+	
+def format_contacts(cache, options, args):
+	
 	full = options.full_postscript or options.full
 
 	if options.groff:
@@ -357,12 +359,12 @@ def main():
 		output.write('.sp 0.3\n')
 
 	contacts = []
-	for contact in vobject.readComponents(evolution.stdout):
+	for contact in vobject.readComponents(cache):
 		line = format_contact(contact, True, full and 1 or 2, options)
 		if line:
 			contacts.append(line)
 
-	eclose(evolution, errors, get_contacts)
+	cache.close()
 
 	contacts.sort(locale.strcoll)
 
@@ -394,10 +396,9 @@ def main():
 		else:
 			cmd.extend(["-P", "-pA4"])
 		os.execvp(cmd[0], cmd)
-		sys.exit("execl failed")
 	pid, status = os.waitpid(child, 0)
 	if status:
-		sys.exit('groff failed: %d' % status)
+		raise MyError('groff failed: %d' % status)
 
 	if not options.print_list:
 		return
@@ -414,10 +415,9 @@ def main():
 			os.execlp(printer, printer, "-P1")
 		else:
 			os.execlp(printer, printer)
-		sys.exit("execl failed")
 	pid, status = os.waitpid(child, 0)
 	if status:
-		sys.exit(printer + ' failed')
+		raise MyError('%s failed (%d)' % (printer, status))
 
 	if turn_over:
 		print("turn the paper over and hit return ", end="")
@@ -428,10 +428,44 @@ def main():
 		if child == 0:
 			os.dup2(postscript.fileno(), 0)
 			os.execlp(printer, printer, "-P2")
-			sys.exit("execl failed")
 		pid, status = os.waitpid(child, 0)
 		if status:
-			sys.exit(printer + ' failed')
+			raise MyError('%s failed (%d)' % (printer, status))
+
+def main():
+	parser = optparse.OptionParser("%prog [options] pattern ...")
+	parser.add_option("-C", "--cache_lifetime", metavar="seconds", type='float', default=120, help="cache life time [%default]")
+	parser.add_option("-n", "--oldcache", action="store_const", const=0, dest='cache_lifetime',
+		help="consider cache is too old")
+	parser.add_option("-v", "--verbose", action="store_true", help="verbose")
+	parser.add_option("-g", "--groff", action="store_true", help="produce groff output")
+	parser.add_option("-p", "--short_postscript", action="store_true", help="produce PostScript list")
+	parser.add_option("-P", "--full_postscript", action="store_true", help="produce full PostScript list")
+	parser.add_option("-f", "--full", action="store_true", help="produce full list")
+	parser.add_option("-d", "--dots", action="store_true", help="add dots to numbers")
+	parser.add_option("-u", "--utf8", action="store_true", help="product a full UTF-8 list")
+	parser.add_option("--stdin", action="store_true", help="read stdin")
+	parser.add_option("--dump", action="store_true", help="dump the raw contact list")
+	parser.add_option("--print", dest="print_list", action="store_true", help="print")
+	parser.add_option("--text_size", type='float', metavar="points", help="text size")
+	parser.add_option("--host", default="n900", help="host to contact [%default]")
+	parser.add_option("--cache", metavar="file_for_cache", help="file to cache contacts [%default]")
+
+	(options, args) = parser.parse_args()
+	
+	#locale.setlocale(locale.LC_COLLATE, 'fr_FR.iso885915@euro')
+	locale.setlocale(locale.LC_ALL, '')
+	locale.setlocale(locale.LC_COLLATE, 'fr_FR.UTF-8')
+	
+	with get_cache_file(options) as cache:
+		if options.dump:
+			for line in cache:
+				print(line, end="")	
+		elif not options.short_postscript and not options.full_postscript and not options.utf8 and not options.groff:
+			show_contacts(cache, args, options)
+		else:
+			format_contacts(cache, options, args)
+
 
 if __name__ == "__main__":
 	main()
