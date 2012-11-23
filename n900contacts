@@ -51,14 +51,14 @@ def format_number(number, options):
 	if number.find('p') >= 0:
 		p = re.compile('^.*p')
 		number = p.sub('', number)
-		if number.startswith('00'):
-			number = '+' + number[2:]
-	else:
-		if number.startswith('00'):
-			number = '+' + number[2:]
-		if number.startswith('+33'):
-			number = '0' + number[3:]
-		if options.dots and number.startswith('0'):
+
+	if number.startswith('00'):
+		number = '+' + number[2:]
+	if number.startswith('0'):
+		number = options.home_prefix + number[1:]
+	if not options.international and number.startswith(options.home_prefix):
+		number = '0' + number[len(options.home_prefix):]
+		if options.dots:
 			p = re.compile(r'(\d\d)')
 			number = p.sub(r'\1.', number)
 			number = number[0:-1]
@@ -108,7 +108,7 @@ def format_contact(contact, troff, min_pager, options):
 			elif type == 'HOME':
 				tag += 'h'
 			elif type == 'FAX':
-				tag += 'f'
+				tag += options.fax_tag
 			elif type == 'WORK':
 				tag += 'w'
 			elif type == 'PAGER':
@@ -441,14 +441,17 @@ def main():
 	parser.add_option("-g", "--groff", action="store_true", help="produce groff output")
 	parser.add_option("-p", "--short_postscript", action="store_true", help="produce PostScript list")
 	parser.add_option("-P", "--full_postscript", action="store_true", help="produce full PostScript list")
+	parser.add_option("-i", "--international", action="store_true", help="use internation format for all numbers")
 	parser.add_option("-f", "--full", action="store_true", help="produce full list")
 	parser.add_option("-d", "--dots", action="store_true", help="add dots to numbers")
-	parser.add_option("-u", "--utf8", action="store_true", help="product a full UTF-8 list")
+	parser.add_option("-u", "--utf8", action="store_true", help="produce a full UTF-8 list")
 	parser.add_option("--stdin", action="store_true", help="read stdin")
 	parser.add_option("--dump", action="store_true", help="dump the raw contact list")
 	parser.add_option("--print", dest="print_list", action="store_true", help="print")
 	parser.add_option("--text_size", type='float', metavar="points", help="text size")
 	parser.add_option("--host", default="n900", help="host to contact [%default]")
+	parser.add_option("--fax_tag", default="f", help="tag for fax numbers [%default]")
+	parser.add_option("--home_prefix", default="+33", help="home prefix [%default]")
 	parser.add_option("--cache", metavar="file_for_cache", help="file to cache contacts [%default]")
 
 	(options, args) = parser.parse_args()
