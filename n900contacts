@@ -1,93 +1,75 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-#    n900contacts Copyright (c) 2011 Stuart Pook
-#    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the GNU General Public License as published by
-#    the Free Software Foundation, either version 3 of the License, or
-#    (at your option) any later version.
+# n900contacts Copyright (c) 2011, 2012  Stuart Pook (http://www.pook.it/)
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later version.
 #
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU General Public License for more details.
+# This program is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY orFITNESS
+# FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 #
-#    You should have received a copy of the GNU General Public License
-#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+# run on a machine that has python-vobject. This machine must be able to run a command on the Nokia N900 using "ssh n900"
+
+# with no options just look for a contact as given in the arguments
+
+# show all the fred's in the contact list on the N900
+#	n900_contacts fred
+
+# print a short list of important contacts formatted using groff
+#	n900_contacts -p | lp
+
+# print a longer list of important and medium contacts
+#	n900_contacts -P | lp
+
+# An important contact is a contact with gender male or female. A medium contact is a contact with an undefinded gender.
+# The printed output is formated for A4 paper.
+
+from __future__ import print_function
+from __future__ import with_statement # This isn't required in Python 2.6
 
 import sys;
 import os;
 import re;
 import unicodedata;
-import time;
 import locale
 import tempfile
-import getopt
 import vobject
 import subprocess
+import optparse
+import errno
+import time
+import stat
 
-myname = os.path.basename(sys.argv[0])
-opts, args = getopt.getopt(sys.argv[1:], "grupP", ["groff", "ps", "utf8", "dots", "stdin"])
-# ugly hack for http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=569273
-get_contacts= ("ssh", "-xn", "n900", "t=`mktemp /tmp/cXXXXXX` && run-standalone.sh osso-addressbook-backup -e $t && sed -e 's/\\\\,/,/g' $t && rm $t")
+class MyError(Exception):
+	pass
 
-of_print = "print"
-of_utf8 = "utf8"
-of_postscript = "postscript"
-of_groff = "groff"
-
-output_format = "print"
-
-print_list = False
-big_print = False
-groff_arg1 = "-P"
-groff_arg2 = "-pA4"
-output_format = of_postscript
-add_dots_to_number = False
-use_stdin = False
-for o, a in opts:
-	if o == "--ps":
-		output_format = of_postscript
-		print_list = True
-	elif o == "-p":
-		print_list = True
-		big_print = False
-	elif o == "--dots":
-		add_dots_to_number = True
-	elif o == "-P":
-		print_list = True
-		big_print = True
-	elif o in ("--stdin"):
-		use_stdin = True
-	elif o in ("--utf8", '-u'):
-		output_format = of_utf8
-		print_list = True
-		groff_arg1 = "-T"
-		groff_arg2 = "utf8"
-	elif o in ("--groff", "-g"):
-		output_format = of_groff
-
-now = time.time()
-
-#locale.setlocale(locale.LC_COLLATE, 'fr_FR.iso885915@euro')
-locale.setlocale(locale.LC_ALL, '')
-locale.setlocale(locale.LC_COLLATE, 'fr_FR.UTF-8')
-
-def format_number(number):
+def format_number(number, options):
 	if number.find('p') >= 0:
 		p = re.compile('^.*p')
 		number = p.sub('', number)
-		if number.startswith('00'):
-			number = '+' + number[2:]
-	else:
-		if number.startswith('+33'):
-			number = '0' + number[3:]
-		if add_dots_to_number and number.startswith('0'):
+
+	if number.startswith('00'):
+		number = '+' + number[2:]
+	if number.startswith('0'):
+		number = options.home_prefix + number[1:]
+	if not options.international and number.startswith(options.home_prefix):
+		number = '0' + number[len(options.home_prefix):]
+		if options.dots:
 			p = re.compile(r'(\d\d)')
 			number = p.sub(r'\1.', number)
 			number = number[0:-1]
 	return number
 
-def format_contact(contact, troff, min_pager):
+def insert(set, value):
+	n = len(set)
+	set.add(value)
+	return n != len(set)
+	
+def format_contact(contact, troff, min_pager, options):
 	if troff:
 		or_mark = r" \(or "
 	else:
@@ -111,59 +93,61 @@ def format_contact(contact, troff, min_pager):
 		out = name + ','
 
 	pager = 0
-	if 'x-gender' in contact.contents:
-		for g in contact.contents['x-gender']:
-			if g.value == 'female' or g.value == "male":
-				pager = 2
-			else:
-				pager = 1
-		
-	if 'tel' in contact.contents:
-		for number in contact.contents['tel']:
-			tag = ''
-			for type in number.params['TYPE']:
-				if type == 'CELL':
-					tag += 'm'
-				elif type == 'HOME':
-					tag += 'h'
-				elif type == 'FAX':
-					tag += 'f'
-				elif type == 'WORK':
-					tag += 'w'
-				elif type == 'PAGER':
-					break
-			else:
+	for g in contact.contents.get('x-gender', []):
+		if g.value == 'female' or g.value == "male":
+			pager = 2
+		else:
+			pager = 1
+	
+	numbers = set()
+	for number in contact.contents.get('tel', []):
+		tag = ''
+		for type in number.params['TYPE']:
+			if type == 'CELL':
+				tag += 'm'
+			elif type == 'HOME':
+				tag += 'h'
+			elif type == 'FAX':
+				tag += options.fax_tag
+			elif type == 'WORK':
+				tag += 'w'
+			elif type == 'PAGER':
+				break
+		else:
+			formated_number = format_number(number.value, options)
+			if insert(numbers, formated_number):
 				out += ' '
-				if len(tag) > 0:
+				if tag:
 					out += tag + nbsp
-				out += format_number(number.value)
+				out += formated_number
 	if pager < min_pager:
 		return ''
 
-	if 'x-sip' in contact.contents:
-		for number in contact.contents['x-sip']:
-			out += ' s' + nbsp + number.value.partition('@')[0]
+	for number in contact.contents.get('x-sip', []):
+		formated_number = format_number(number.value.partition('@')[0], options)
+		if insert(numbers, formated_number):
+			out += ' s' + nbsp + formated_number
 
-	if 'adr' in contact.contents:
-		for address in contact.contents['adr']:
-			tag = ''
-			try:
-				for type in address.params['TYPE']:
-					if type == 'HOME':
-						tag += 'h'
-					elif type == 'WORK':
-						tag += 'w'
-			except KeyError:
-				pass
-			v = address.value
-			for v in (v.box, v.extended, v.street, v.code, v.city, v.region, v.country):
-				if len(v) > 0:
-					out += ' '
-					if len(tag):
-						out += tag + nbsp
-						tag = ''
-					for vv in v:
-						out += vv
+	for address in contact.contents.get('adr', []):
+		tag = ''
+		try:
+			for type in address.params['TYPE']:
+				if type == 'HOME':
+					tag += 'h'
+				elif type == 'WORK':
+					tag += 'w'
+		except KeyError:
+			pass
+		v = address.value
+		for v in (v.box, v.extended, v.street, v.code, v.city, v.region, v.country):
+			if len(v) > 0:
+				out += ' '
+				if len(tag):
+					out += tag + nbsp
+					tag = ''
+				for vv in v:
+					out += vv
+
 	if 'note' in contact.contents:
 		done1 = False
 		for note in contact.contents['note']:
@@ -177,12 +161,11 @@ def format_contact(contact, troff, min_pager):
 		if done1:
 			out += ')'
 
-	if 'email' in contact.contents:
-		for email in contact.contents['email']:
-			if troff:
-				out += ' ' + email.value.replace('@', '\\:@').replace('.', '\\:.')
-			else:
-				out += ' ' + email.value
+	for email in contact.contents.get('email', []):
+		if troff:
+			out += ' ' + email.value.replace('@', '\\:@').replace('.', '\\:.')
+		else:
+			out += ' ' + email.value
 			
 	return out
 
@@ -197,18 +180,11 @@ def strip_accents(uc):
 			d += i
 	return d
 
-def eclose(evolution, errors):
+def eclose(evolution, errors, cmd):
 	if evolution.wait() != 0:
 		errors.seek(0)
 		sys.stderr.writelines(errors)
-		sys.exit(myname + ": unable to read calendar")
-		
-errors = tempfile.TemporaryFile()
-if use_stdin:
-	vcal = sys.stdin
-else:
-	evolution = subprocess.Popen(get_contacts, bufsize = -1, stdout = subprocess.PIPE, stderr = errors, close_fds = True)
-	vcal = evolution.stdout
+		raise MyError("%s failed (%d)" % (cmd[0], evolution.returncode))
 
 def matcher(unicode, expressions, what):
 #	print "matching", what, "=", `unicode`
@@ -255,16 +231,15 @@ def match(contact, expressions):
 					return True
 			
 	return False
-
-
-if not print_list:
+	
+def show_contacts(vcal, args, options):
 	expressions = []
 	for a in args:
 		expressions.append(re.compile(strip_accents(a.decode('utf-8')), re.IGNORECASE))
 	for contact in vobject.readComponents(vcal):
 		if (match(contact, expressions)):
 #			print dir(contact), contact.n.value.__doc__, `contact.n.value.given`, dir(contact.n.value)
-			print format_contact(contact, False, 0).encode('utf-8')
+			print(format_contact(contact, False, 0, options).encode('utf-8'))
 #		express: for e in expressions:
 #			for k in ("fn", "n", "org"):
 #				if k in contact.contents:
@@ -277,13 +252,60 @@ if not print_list:
 #					print format_contact(contact, False, 0).encode('utf-8')
 #					break express
 #	eclose(evolution, errors)
-	sys.exit(0)
 
-if output_format == of_groff:
-	output = sys.stdout
-else:
-	output = tempfile.TemporaryFile()
-mess = """.\\"
+def get_cache_file(options):
+# ugly hack for http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=569273
+	get_contacts= ["ssh", "-xn", options.host,
+		"t=`mktemp /tmp/cXXXXXX` && run-standalone.sh osso-addressbook-backup -e $t && sed -e 's/\\\\,/,/g' $t && rm $t"]
+	
+	if options.cache:
+		mode = 0o666
+		try:
+			old = open(options.cache, "r")
+		except IOError, e:
+			if e.errno != errno.ENOENT:
+				raise e
+			if options.verbose:
+				print("no cache " + options.cache, file=sys.stderr)
+		else:
+			stat_buf = os.fstat(old.fileno())
+			if stat_buf.st_mtime > time.time() - options.cache_lifetime:
+				if options.verbose:
+					print("reusing cache " + options.cache, file=sys.stderr)
+				return old
+			mode = stat.S_IMODE(stat_buf.st_mode)
+			old.close()
+			if options.verbose:
+				print("cache too old %s (new mode %#o)" % (options.cache, mode), file=sys.stderr)
+			
+		tmp = options.cache + ".tmp"
+		agenda = os.fdopen(os.open(tmp, os.O_RDWR | os.O_CREAT | os.O_TRUNC, mode))
+	else:
+		agenda = tempfile.TemporaryFile()
+
+	errors = tempfile.TemporaryFile()
+	evolution = subprocess.Popen(get_contacts, bufsize=-1, stdout=agenda, stderr=errors, close_fds=True)
+	if evolution.wait() != 0:
+		if options.cache:
+			os.remove(tmp)
+		errors.seek(0)
+		sys.stderr.writelines(errors)
+		raise MyError("%s failed (%d)" % (cmd[0], evolution.returncode))
+	
+	agenda.seek(0)
+	if options.cache:
+		os.rename(tmp, options.cache)
+	return agenda
+	
+def format_contacts(cache, options, args):
+	
+	full = options.full_postscript or options.full
+
+	if options.groff:
+		output = sys.stdout
+	else:
+		output = tempfile.TemporaryFile()
+	mess = """.\\"
 .af minutes 00
 .kern
 .fam HN
@@ -295,11 +317,15 @@ mess = """.\\"
 .pl 29.7c
 .sp \\n[topmargin]u
 """
-output.write(mess)
+	output.write(mess)
 
-if big_print:
-	mess = """.\\"
-.ps 10
+	if full:
+		sz = 11
+		if options.text_size:
+			sz = options.text_size
+		output.write('.ps %f\n' % sz)
+			
+		mess = """.\\"
 .vs \\n[.s]+0.9
 .de NP
 'bp
@@ -307,9 +333,12 @@ if big_print:
 ..
 .wh -0.8c NP
 """
-else:
-	mess = """.\\"
-.ps 7.5
+	else:
+		sz = 7.8
+		if options.text_size:
+			sz = options.text_size
+		output.write('.ps %f\n' % sz)
+		mess = """.\\"
 .vs \\n[.s]+0.4
 .ll 15c
 .de NP
@@ -319,90 +348,127 @@ else:
 ..
 .wh 7.2c NP
 """
-output.write(mess)
-if output_format == of_utf8:
-		output.write('.ll 26c\n')
-		output.write('.po 0\n')
-		output.write('.wh 7.2c\n')
+	output.write(mess)
+	if options.utf8:
+			output.write('.ll 26c\n')
+			output.write('.po 0\n')
+			output.write('.wh 7.2c\n')
 
-output.write(r'\n[hours]:\n[minutes] \n[dy]/\n[mo]/\n[year]' + '\n')
-if big_print:
-	output.write('.sp 0.3\n')
+	output.write(r'\n[hours]:\n[minutes] \n[dy]/\n[mo]/\n[year]' + '\n')
+	if full:
+		output.write('.sp 0.3\n')
 
-contacts = []
-for contact in vobject.readComponents(vcal):
-	line = format_contact(contact, True, big_print and 1 or 2)
-	if len(line):
-		contacts.append(line)
+	contacts = []
+	for contact in vobject.readComponents(cache):
+		line = format_contact(contact, True, full and 1 or 2, options)
+		if line:
+			contacts.append(line)
 
-#eclose(evolution, errors)
+	cache.close()
 
-contacts.sort(locale.strcoll)
+	contacts.sort(locale.strcoll)
 
-for line in contacts:
-	euro = u'\u20ac'
-	line = line.replace(euro, r'\[eu]')
-	output.write(line.encode('iso8859-1'))
+	for line in contacts:
+		euro = u'\u20ac'
+		line = line.replace(euro, r'\[eu]')
+		output.write(line.encode('iso8859-1'))
+		output.write('\n')
+		if full:
+			output.write('.br\n')
+
 	output.write('\n')
-	if big_print:
-		output.write('.br\n')
 
-output.write('\n')
+	if options.groff:
+		return
 
-if output_format == of_groff:
-	sys.exit(0)
+	output.flush()
+	output.seek(0)
 
-output.flush()
-output.seek(0)
+	postscript = tempfile.TemporaryFile()
+	child = os.fork()
+	if child == 0:
+		os.dup2(output.fileno(), 0)
+		if options.print_list:
+			os.dup2(postscript.fileno(), 1)
+		cmd = ["groff"]
+		if options.utf8:
+			cmd.extend(["-T", "utf8"])
+		else:
+			cmd.extend(["-P", "-pA4"])
+		os.execvp(cmd[0], cmd)
+	pid, status = os.waitpid(child, 0)
+	if status:
+		raise MyError('groff failed: %d' % status)
 
-postscript = tempfile.TemporaryFile()
-child = os.fork()
-if child == 0:
-	os.dup2(output.fileno(), 0)
-	if output_format == of_print:
-		os.dup2(postscript.fileno(), 1)
-	os.execlp("groff", "groff", groff_arg1, groff_arg2)
-	sys.exit("execl failed")
-pid, status = os.waitpid(child, 0)
-if status:
-	sys.exit('groff failed: ' + `status`)
+	if not options.print_list:
+		return
 
-if output_format != of_print:
-	sys.exit()
-
-if big_print:
 	printer = "lp"
-else:
-	printer = "lph"
 
-options = popen2.Popen3("lpoptions")
-lpoptions = options.fromchild.readline()
-options.fromchild.close()
-turn_over = options.wait() != 0 or not "Duplex=Duplex" in lpoptions
+	turn_over = not "Duplex=Duplex" in subprocess.Popen(["lpoptions"], stdout=subprocess.PIPE).communicate()[0]
 
-postscript.seek(0)
-child = os.fork()
-if child == 0:
-	os.dup2(postscript.fileno(), 0)
-	if turn_over:
-		os.execlp(printer, printer, "-P1")
-	else:
-		os.execlp(printer, printer)
-	sys.exit("execl failed")
-pid, status = os.waitpid(child, 0)
-if status:
-	sys.exit(printer + ' failed')
-
-if turn_over:
-	print "turn the paper over and hit return ", 
-	sys.stdin.readline()
-	
 	postscript.seek(0)
 	child = os.fork()
 	if child == 0:
 		os.dup2(postscript.fileno(), 0)
-		os.execlp(printer, printer, "-P2")
-		sys.exit("execl failed")
+		if turn_over:
+			os.execlp(printer, printer, "-P1")
+		else:
+			os.execlp(printer, printer)
 	pid, status = os.waitpid(child, 0)
 	if status:
-		sys.exit(printer + ' failed')
+		raise MyError('%s failed (%d)' % (printer, status))
+
+	if turn_over:
+		print("turn the paper over and hit return ", end="")
+		sys.stdin.readline()
+		
+		postscript.seek(0)
+		child = os.fork()
+		if child == 0:
+			os.dup2(postscript.fileno(), 0)
+			os.execlp(printer, printer, "-P2")
+		pid, status = os.waitpid(child, 0)
+		if status:
+			raise MyError('%s failed (%d)' % (printer, status))
+
+def main():
+	parser = optparse.OptionParser("%prog [options] pattern ...")
+	parser.add_option("-C", "--cache_lifetime", metavar="seconds", type='float', default=120, help="cache life time [%default]")
+	parser.add_option("-n", "--oldcache", action="store_const", const=0, dest='cache_lifetime',
+		help="consider cache is too old")
+	parser.add_option("-v", "--verbose", action="store_true", help="verbose")
+	parser.add_option("-g", "--groff", action="store_true", help="produce groff output")
+	parser.add_option("-p", "--short_postscript", action="store_true", help="produce PostScript list")
+	parser.add_option("-P", "--full_postscript", action="store_true", help="produce full PostScript list")
+	parser.add_option("-i", "--international", action="store_true", help="use internation format for all numbers")
+	parser.add_option("-f", "--full", action="store_true", help="produce full list")
+	parser.add_option("-d", "--dots", action="store_true", help="add dots to numbers")
+	parser.add_option("-u", "--utf8", action="store_true", help="produce a full UTF-8 list")
+	parser.add_option("--stdin", action="store_true", help="read stdin")
+	parser.add_option("--dump", action="store_true", help="dump the raw contact list")
+	parser.add_option("--print", dest="print_list", action="store_true", help="print")
+	parser.add_option("--text_size", type='float', metavar="points", help="text size")
+	parser.add_option("--host", default="n900", help="host to contact [%default]")
+	parser.add_option("--fax_tag", default="f", help="tag for fax numbers [%default]")
+	parser.add_option("--home_prefix", default="+33", help="home prefix [%default]")
+	parser.add_option("--cache", metavar="file_for_cache", help="file to cache contacts [%default]")
+
+	(options, args) = parser.parse_args()
+	
+	#locale.setlocale(locale.LC_COLLATE, 'fr_FR.iso885915@euro')
+	locale.setlocale(locale.LC_ALL, '')
+	locale.setlocale(locale.LC_COLLATE, 'fr_FR.UTF-8')
+	
+	with get_cache_file(options) as cache:
+		if options.dump:
+			for line in cache:
+				print(line, end="")	
+		elif not options.short_postscript and not options.full_postscript and not options.utf8 and not options.groff:
+			show_contacts(cache, args, options)
+		else:
+			format_contacts(cache, options, args)
+
+
+if __name__ == "__main__":
+	main()
