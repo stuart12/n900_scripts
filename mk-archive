@@ -1,0 +1,300 @@
+#!/usr/bin/python3
+
+# don't put newlines at end of the passwords in the password files
+
+import os
+import sys
+import subprocess
+import tempfile
+import optparse
+import pipes
+import shutil
+import time
+import datetime
+import hashlib
+
+def print_command(command, cwd=None, stdin=None):
+	if cwd:
+		print("(cd", cwd, '&& ', end='')
+	print(" ".join([pipes.quote(c) for c in command]), end="")
+	if stdin:
+		print(" <", stdin, end="")
+	if cwd:
+		print(")")
+	else:
+		print()
+	return command
+
+def call(command, stdin=None, cwd=None):
+	print_command(command, stdin=stdin, cwd=cwd)
+	if stdin:
+		subprocess.check_call(command, cwd=cwd, stdin=open(stdin))
+	else:
+		subprocess.check_call(command, cwd=cwd)
+
+def call_sudo(command, stdin=None):
+	call(["sudo"] + command, stdin=stdin)
+		
+def output(command, stdin=None):
+	print_command(command, stdin=stdin)
+	if stdin:
+		r = subprocess.check_output(command, stdin=open(stdin))
+	else:
+		r = subprocess.check_output(command)
+	return r.decode().strip()
+
+def output_sudo(command, stdin=None):
+	return output(["sudo"] + command, stdin=stdin)
+	
+def umount(mount_point, command="umount"):
+	os.stat(mount_point)
+	if os.path.ismount(mount_point):
+		call_sudo([command, mount_point])
+		
+def make_sparse_file(name, size):
+	try:
+		os.remove(name)
+	except IOError as e:
+		if e.errno != ENOENT:
+			raise
+	image = open(name, "w")
+	image.seek(size - 1)
+	image.write("\0")
+	image.flush()
+	image.seek(0)
+	assert os.fstat(image.fileno()).st_size == size
+	return image
+		
+def get_overhead(loop, crypt_device, arg):
+	image_size = int(output_sudo(["blockdev", "--getsize", loop]))
+	crypt_size = int(output_sudo(["blockdev", "--getsize", crypt_device]))
+	return image_size - crypt_size
+	
+def copy_squash(loop, crypt_device, squash_file):
+	call_sudo(["cp", squash_file, crypt_device])
+	
+def perform_on_image(image_filename, size, options, passwords, func, arg):
+	with make_sparse_file(image_filename, size) as image:
+		loop =  output_sudo(["losetup", "--show", "-f", image_filename])
+		try:
+			call_sudo(["sudo", "cryptsetup", "luksFormat", loop, "-"], stdin=passwords[0])
+			for f in  passwords[1:]:
+				call_sudo(["cryptsetup", "luksAddKey", loop, "--key-file", passwords[0], f])
+			call_sudo(["cryptsetup", "luksOpen", "--key-file", passwords[-1], loop, options.crypt_device])
+			try:
+				crypt_device = os.path.join("/dev/mapper", options.crypt_device)
+				return func(loop, crypt_device, arg)
+			finally:
+				call_sudo(["cryptsetup", "remove", options.crypt_device])
+		finally:
+			call_sudo(["losetup", "-d", loop])
+
+def md5check(dir, options):
+	call(["md5sum", "--quiet", "--strict", "--check", options.md5sums], cwd=dir)
+	
+def burn_cdrom(image_filename, squash_mount, passwords, options):
+	umount(options.cdrom_mountpoint, command="umount.crypt")
+	with open(image_filename) as dummy:
+		if options.blank:
+			call([options.wodim, "blank=fast"])
+		call([options.wodim, "-v", "padsize=2M", "-dao", "-eject", "-"], stdin=image_filename)
+	call(["eject", "-t"])
+	time.sleep(options.cd_insert_sleep)
+	call_sudo(["mount", "-r", options.cdrom, options.cdrom_mountpoint], stdin=passwords[-1])
+	md5check(options.cdrom_mountpoint, options)
+	call(["diff", "-r", squash_mount, options.cdrom_mountpoint])
+	umount(options.cdrom_mountpoint, command="umount.crypt")
+	
+def set_add(s, element):
+	n = len(s)
+	s.add(element)
+	return n != len(s)
+	
+def symlink(src, dest, options):
+	if options.verbose:
+		print("ln -s", src, dest)
+	os.symlink(src, dest)
+	os.stat(dest)
+	
+def mkdir(d, options):
+	if options.verbose:
+		print("mkdir", d)
+	os.mkdir(d)
+
+def make_archive_links(src, dest, up, down, done, directories, options):
+	if options.verbose:
+		print("make_archive_links", src, dest, up)
+	made = False
+	for f in os.listdir(src):
+		s = os.path.join(src, f)
+		d = os.path.join(dest, f)
+		if os.path.isdir(s):
+			if set_add(directories, d):
+				mkdir(d, options)
+			make_archive_links(s, d, os.path.join("..", up), os.path.join(down, f), done, directories, options)
+		else:
+			new = os.path.join(down, f)
+			if d in done:
+				if options.verbose:
+					print("don't make", d, "a link to", new, "as it is a link to", done[d])
+			else:
+				done[d] = new
+				try:
+					symlink(os.path.join(up, new), d, options)
+				except OSError:
+					print(done)
+					raise
+					
+def md5sum(filename):
+	md5 = hashlib.md5()
+	with open(filename,'rb') as f: 
+		for chunk in iter(lambda: f.read(128 * md5.block_size), b''): 
+			md5.update(chunk)
+	return md5.hexdigest()
+	
+def extra_info(tmpd, id, options):
+	now = datetime.datetime.now()
+	
+	date_stamp = os.path.join(tmpd, now.date().isoformat())
+	with open(date_stamp, "w") as f:
+		f.write(id + "\n")
+
+	tag = os.path.join(tmpd, "volume-" + id)
+	with open(tag,"w") as f:
+		f.write(str(datetime.datetime.now()) + "\n")
+		
+	volid = os.path.join(tmpd, "volid")
+	with open(volid,"w") as f:
+		f.write(id + "\n")
+		
+	return [ date_stamp, tag, volid ]
+	
+def make_documents(tmpd, options):
+	if options.test:
+		return ["/lib/terminfo" ]
+	
+	top = os.path.join(tmpd, "documents")
+	os.mkdir(top)
+	dirs = os.listdir(options.current)
+	dirs.sort(reverse=True)
+	files = dict()
+	directories = set()
+	docs = "documents"
+	
+	cdrom_base = "cdrom"
+	cdrom = os.path.join(tmpd, cdrom_base)
+	mkdir(cdrom, options)
+
+	roots = [top, __file__, cdrom, "/disks/stuart-sshfs/keepass.kdb"]
+	
+	for archive in dirs:
+		start = os.path.join(options.current, archive)
+		roots.append(start)
+		to = os.path.join(archive, os.path.join(tmpd, archive))
+		symlink(start, to, options)
+		here = os.path.join(start, docs)
+		if os.path.isdir(here):
+			symlink(os.path.join("..", archive), os.path.join(cdrom, archive), options)
+			make_archive_links(here, top, os.path.join("..", cdrom_base) , os.path.join(archive, docs), files, directories, options)
+					
+	md5 = os.path.join(tmpd, options.md5sums)
+	with open(md5, "w") as sums:
+		for fname in files.values():
+			sums.write(md5sum(fname) + "  " + fname + "\n")
+			
+
+	return roots + [ md5 ] + extra_info(tmpd, dirs[0], options)
+	
+def main():
+	parser = optparse.OptionParser(usage="usage: %prog [options]")
+	parser.set_defaults(check_children=False)
+	parser.disable_interspersed_args()	
+	parser.add_option("-v", "--verbose", action="store_true", help="verbose messages")
+	parser.add_option("-t", "--test", action="store_true", help="use test data to create the image")
+	parser.add_option("--blank", action="store_true", help="blank CDROM and burn an existing image")
+	parser.add_option("--burn", action="store_true", help="burn an existing image")
+	parser.add_option("--wodim", default="wodim", metavar="program", help="command to burn a CD [%default]")
+	
+	parser.add_option("--cdrom", default="/dev/cdrw", metavar="device", help="CD device [%default]")
+	parser.add_option("--cdrom_mountpoint", default="/media/cdrom0", metavar="directory", help="where to mount a CD [%default]")
+	parser.add_option("--cd_insert_sleep", type="float", default=20, help="time to sleep after inserting CD [%default]")
+	parser.add_option("--md5sums", default="md5sums.txt", metavar="filename", help="file to store MD5 checksums [%default]")
+
+	parser.add_option("--number", type="int", default=9, help="new archive number [%default]")
+	parser.add_option("--current", default="/disks/tmp_archive/archive8", help="old archive [%default]")
+	parser.add_option("--luks_size", type="int", default=4, help="luks overhead estimation in mibibytes [%default]")
+	parser.add_option("--password_dir", default="/disks/tmp_archive/passwords", help="directory containing passwords [%default]")
+	parser.add_option("--crypt_device", default="mk_archive_device", help="crypt device name [%default]")
+	parser.add_option("--output", default="/tmp/stuart", help="output directory [%default]")
+	parser.add_option("--squash_mount", default="squash_mount", help="squash mount point relative to --output [%default]")
+	parser.add_option("--squash_file", default="archive.sqsh", help="squash filename relative to --output [%default]")
+	parser.add_option("--luks_file", default="archive.luks", help="luks output filename relative to --output [%default]")
+	parser.add_option("--luks_mount", default="luks_mount", help="luks mount point relative to --output [%default]")
+
+	parser.add_option("--squash_block_size", type="int", default=4096, help="mksquashfs block size [%default]")
+	(options, args) = parser.parse_args()
+	
+	image_filename = os.path.join(options.output, options.luks_file)
+	squash_mount = os.path.join(options.output, options.squash_mount)
+
+	passwords = [os.path.join(options.password_dir, d) for d in os.listdir(options.password_dir)]
+	if len(passwords) == 0:
+		raise MyError("must have at least one file in " + options.password_dir)
+	
+	if options.burn or options.blank:
+		burn_cdrom(image_filename, squash_mount, passwords, options)
+		return
+	
+	os.umask(0o22)
+	block_size = 512
+	if options.squash_block_size % block_size != 0:
+		raise MyError("squash_block_size is not a multiple of %d" % block_size)
+		
+	umount(squash_mount)
+	luks_mount = os.path.join(options.output, options.luks_mount)
+	umount(luks_mount, command="umount.crypt")
+	
+	squash_filename = os.path.join(options.output, options.squash_file)
+		
+	squash_file = open(squash_filename, "w")
+	with tempfile.TemporaryDirectory(prefix='mk-archive') as tmpd:
+		exclude = os.path.join(tmpd, "exclude")
+		with open(exclude, "w") as f:
+			f.write("lost+found\n")
+		call(["mksquashfs"] + make_documents(tmpd, options) + [squash_filename,
+			"-b", str(options.squash_block_size),
+			"-all-root",
+			"-comp", "xz",
+			"-noappend",
+			"-ef", exclude])
+		
+	squash_file.seek(0, 2)
+	squash_size = squash_file.tell()
+	if squash_size % block_size != 0:
+		raise MyError("file created by mksquashfs not a multiple of %d" % block_size)
+	squash_blocks = int(squash_size / block_size)
+	
+	call_sudo(["mount", "-o", "loop", "-r", squash_filename, squash_mount])
+	md5check(squash_mount, options)
+
+	print(squash_filename, squash_blocks, "blocks", squash_size / 1024 / 1024, "MiB")
+	
+	overhead = perform_on_image(image_filename, options.luks_size * 1024 * 1024, options, passwords[:1], get_overhead, None)
+	
+	print("overhead", overhead, overhead / 2 / 1024)
+	image_size = block_size * (squash_blocks + overhead)
+	print("image_size", image_size / 1024 / 1024, "MiB")
+	
+	perform_on_image(image_filename, image_size, options, passwords, copy_squash, squash_filename)
+	
+	for password in passwords:
+		time.sleep(1)
+		umount(luks_mount, command="umount.crypt")
+		time.sleep(1)
+		call_sudo(["mount", "-r", "-o", "loop", image_filename,  luks_mount], stdin=password)
+		md5check(luks_mount, options)
+	
+	call(["diff", "-r", squash_mount, luks_mount])
+
+if __name__ == "__main__":
+	main()

@@ -1,6 +1,8 @@
 git pull
 git commit -m "$*" . && git push
 
+exit $?
+
 # add a file
 : git add todo
 
@@ -18,29 +20,6 @@ exit $?
 
 Global setup:
 
- Set up git
-      
-
-Next steps:
-
-  mkdir gdownload
-  cd gdownload
-  git init
-  touch README
-  git add README
-  git commit -m 'first commit'
-  git remote add origin git@github.com:stuart12/gdownload.git
-  git push -u origin master
-      
-
-Existing Git Repo?
-
-  cd existing_git_repo
-  git remote add origin git@github.com:stuart12/gdownload.git
-  git push -u origin master
-      
-
 # http://stackoverflow.com/questions/658885/how-do-you-get-git-to-always-pull-from-a-specific-branch
-# :; git config branch.master.remote origin
-# :; git config branch.master.merge refs/heads/master
-
+:; git config branch.master.remote origin
+:; git config branch.master.merge refs/heads/master
