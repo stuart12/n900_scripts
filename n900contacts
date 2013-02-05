@@ -290,7 +290,7 @@ def get_cache_file(options):
 			os.remove(tmp)
 		errors.seek(0)
 		sys.stderr.writelines(errors)
-		raise MyError("%s failed (%d)" % (cmd[0], evolution.returncode))
+		raise MyError("%s failed (%d)" % (get_contacts[0], evolution.returncode))
 	
 	agenda.seek(0)
 	if options.cache:
