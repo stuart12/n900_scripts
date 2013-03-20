@@ -197,42 +197,35 @@ def matcher(unicode, expressions, what):
 def match(contact, expressions):
 #	print(contact)
 	for k in ("org", ):
-		if k in contact.contents:
-			for l in contact.contents[k]:
-				for m in l.value:
-					if (matcher(m, expressions, k)):
-						return True
+		for l in contact.contents.get(k, []):
+			for m in l.value:
+				if matcher(m, expressions, k):
+					return True
 				
 	for k in ("n",):
-		if k in contact.contents:
-			for l in contact.contents[k]:
-#				print "n 1= ", dir(l)
-#				print "n a= ", l.prettyPrint()
-#				print "n 2= ", `l.value`
-#				print "n 3= ", dir(l.value)
-#				print "n 3 given = ", `l.value.given`
-#				print "n5=", strip_accents(l.value.given)
-#				print "n6=", strip_accents(l.value.family)
-				if (matcher(l.value.suffix, expressions, k + " suffix")):
-					return True
-				if (matcher(l.value.additional, expressions, k + " additional")):
-					return True
-				if (matcher(l.value.prefix, expressions, k + " prefix")):
-					return True
-				if (matcher(l.value.given, expressions, k + " given")):
-					return True
-				if (matcher(l.value.family, expressions, k + " family")):
-					return True
+		for l in contact.contents.get(k, []):
+#			print "n 1= ", dir(l)
+#			print "n a= ", l.prettyPrint()
+#			print "n 2= ", `l.value`
+#			print "n 3= ", dir(l.value)
+#			print "n 3 given = ", `l.value.given`
+#			print "n5=", strip_accents(l.value.given)
+#			print "n6=", strip_accents(l.value.family)
+			if matcher(l.value.suffix, expressions, k + " suffix"):
+				return True
+			if matcher(l.value.additional, expressions, k + " additional"):
+				return True
+			if matcher(l.value.prefix, expressions, k + " prefix"):
+				return True
+			if matcher(l.value.given, expressions, k + " given"):
+				return True
+			if matcher(l.value.family, expressions, k + " family"):
+				return True
 					
-	for k in ("fn",):
-		if k in contact.contents:
-			for l in contact.contents[k]:
-				if (matcher(l.value, expressions, k)):
-					return True
-				
-	for number in contact.contents.get('tel', []):
-		if matcher(number.value, expressions, "tel"):
-			return True
+	for k in ("fn", 'tel'):
+		for l in contact.contents.get(k, []):
+			if matcher(l.value, expressions, k):
+				return True
 
 	for number in contact.contents.get('x-sip', []):
 		if matcher(number.value.partition('@')[0], expressions, "x-sip"):
