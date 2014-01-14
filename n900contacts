@@ -311,7 +311,7 @@ def format_contacts(cache, options, args):
 .fam HN
 .nh
 .na
-.nr topmargin 0.5c
+.nr topmargin 1.5c
 .po 0.7c
 .ll 19.8c
 .pl 29.7c
@@ -334,7 +334,7 @@ def format_contacts(cache, options, args):
 .wh -0.8c NP
 """
 	else:
-		sz = 7.8
+		sz = 7.9
 		if options.text_size:
 			sz = options.text_size
 		output.write('.ps %f\n' % sz)
